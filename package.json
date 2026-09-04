@@ -12,7 +12,9 @@
     "typecheck": "tsc --noEmit",
     "sim": "vite-node scripts/simulate.ts",
     "lint:core": "node scripts/check-core-purity.mjs",
-    "pretest": "node scripts/check-core-purity.mjs"
+    "edge:build": "node scripts/build-edge-shared.mjs",
+    "edge:check": "node scripts/build-edge-shared.mjs --check",
+    "pretest": "node scripts/check-core-purity.mjs && node scripts/build-edge-shared.mjs --check"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.115.0",

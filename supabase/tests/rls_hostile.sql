@@ -94,6 +94,11 @@ begin
     failures := failures || 'ATTACK 12: client wrote league points';
   exception when others then null; end;
 
+  begin
+    perform public.apply_run_rewards(uid, 999999, 999999, 999999, 99);
+    failures := failures || 'ATTACK 13: client called apply_run_rewards directly';
+  exception when others then null; end;
+
   -- Things a client legitimately MUST still be able to do.
   update public.profiles set display_name = 'LEWIS', avatar_id = 'nova', country_code = 'NZ'
   where id = uid;
@@ -114,5 +119,5 @@ begin
   if array_length(failures, 1) > 0 then
     raise exception 'HOSTILE SUITE FAILED: %', array_to_string(failures, ' | ');
   end if;
-  raise notice 'PASS: 12 attacks refused, 3 legitimate actions allowed';
+  raise notice 'PASS: 13 attacks refused, 3 legitimate actions allowed';
 end $$;
