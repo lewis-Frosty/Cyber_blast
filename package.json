@@ -15,6 +15,7 @@
     "pretest": "node scripts/check-core-purity.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.115.0",
     "phaser": "^3.80.1"
   },
   "devDependencies": {

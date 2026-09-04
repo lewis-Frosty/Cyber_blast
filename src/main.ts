@@ -4,6 +4,7 @@ import { BootScene } from './scenes/BootScene';
 import { GameScene } from './scenes/GameScene';
 import { GameOverScene } from './scenes/GameOverScene';
 import { HelpScene } from './scenes/HelpScene';
+import { ensureSession, isBackendConfigured } from './backend/supabase';
 
 const game = new Phaser.Game({
   type: Phaser.AUTO,
@@ -29,3 +30,11 @@ declare global {
   }
 }
 window.__cyberBlast = game;
+
+// Sign in silently on first launch (backend spec §1). Fired and forgotten: the
+// game must start and stay playable whether or not this ever resolves.
+if (isBackendConfigured()) {
+  void ensureSession().then((session) => {
+    if (session) console.info('[cyber-blast] signed in anonymously as', session.userId);
+  });
+}
