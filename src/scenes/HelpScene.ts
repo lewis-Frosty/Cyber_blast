@@ -96,6 +96,14 @@ export class HelpScene extends Phaser.Scene {
         color: '#8781b8',
       })
       .setOrigin(0, 0);
+    y += 18;
+    this.add
+      .text(28, y, 'Lime charges nothing — it is pure fuel.', {
+        fontFamily: THEME.fonts.body,
+        fontSize: '14px',
+        color: '#A8FF3E',
+      })
+      .setOrigin(0, 0);
     y += 26;
 
     for (const def of POWERUPS) {

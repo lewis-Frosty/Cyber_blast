@@ -1,5 +1,5 @@
 import type { Board } from './Board';
-import { EMPTY, type CellIndex, type ColorId } from './types';
+import type { CellIndex, ColorId } from './types';
 
 /**
  * Per-colour power-ups. Pure — no engine dependencies.
@@ -10,7 +10,7 @@ import { EMPTY, type CellIndex, type ColorId } from './types';
  * colour you keep detonating is the ability you keep earning.
  */
 
-export type PowerUpId = 'flush' | 'nova' | 'paint' | 'reroll' | 'pluck';
+export type PowerUpId = 'flush' | 'nova' | 'reroll' | 'pluck';
 
 /** How the player aims the ability. */
 export type Targeting = 'cell' | 'none';
@@ -25,16 +25,33 @@ export interface PowerUpDef {
   readonly targeting: Targeting;
 }
 
+/**
+ * Lime (2) deliberately has NO power-up. Paint was removed after playtesting —
+ * it recoloured a tile to match its neighbours, which sounded useful and was
+ * not: the cluster you wanted was almost always easier to build by placing a
+ * piece. Lime is now pure fuel, which is a real trade rather than an oversight,
+ * so a colour having no ability must be handled everywhere rather than assumed
+ * away.
+ */
 export const POWERUPS: readonly PowerUpDef[] = [
   { id: 'flush', colour: 0, name: 'Flush', blurb: 'Clears a full row and column, every colour', targeting: 'cell' },
   { id: 'nova', colour: 1, name: 'Nova', blurb: 'Blows a 3×3 hole, every colour', targeting: 'cell' },
-  { id: 'paint', colour: 2, name: 'Paint', blurb: 'Recolours a tile to match its neighbours', targeting: 'cell' },
   { id: 'reroll', colour: 3, name: 'Reroll', blurb: 'Swaps the tray for three new pieces', targeting: 'none' },
   { id: 'pluck', colour: 4, name: 'Pluck', blurb: 'Deletes a whole connected blob of one colour', targeting: 'cell' },
 ];
 
+/** The ability a colour charges, or null when that colour has none. */
+export function powerUpForColourOrNull(colour: ColorId): PowerUpDef | null {
+  return POWERUPS.find((x) => x.colour === colour) ?? null;
+}
+
+/** True if clearing this colour charges anything at all. */
+export function colourHasPowerUp(colour: ColorId): boolean {
+  return powerUpForColourOrNull(colour) !== null;
+}
+
 export function powerUpForColour(colour: ColorId): PowerUpDef {
-  const p = POWERUPS.find((x) => x.colour === colour);
+  const p = powerUpForColourOrNull(colour);
   if (!p) throw new Error(`No power-up defined for colour ${colour}`);
   return p;
 }
@@ -64,40 +81,8 @@ const ORTHOGONAL: readonly (readonly [number, number])[] = [
 ];
 
 /**
- * Colour a Paint target should become: the most common colour among its
- * orthogonal neighbours, so one tap merges the tile into the blob beside it.
- * Ties break toward the colour with the larger cluster touching the target.
- * Returns null when the tile has no filled neighbours (nothing to merge into).
- */
-export function paintTargetColour(board: Board, row: number, col: number): ColorId | null {
-  const counts = new Map<ColorId, number>();
-  for (const [dr, dc] of ORTHOGONAL) {
-    const r = row + dr;
-    const c = col + dc;
-    if (!board.inBounds(r, c)) continue;
-    const v = board.get(r, c);
-    if (v === EMPTY) continue;
-    counts.set(v, (counts.get(v) ?? 0) + 1);
-  }
-  if (counts.size === 0) return null;
-
-  let best: ColorId | null = null;
-  let bestCount = -1;
-  let bestCluster = -1;
-  for (const [colour, count] of counts) {
-    const cluster = clusterSize(board, row, col, colour);
-    if (count > bestCount || (count === bestCount && cluster > bestCluster)) {
-      best = colour;
-      bestCount = count;
-      bestCluster = cluster;
-    }
-  }
-  return best;
-}
-
-/**
  * Every filled cell orthogonally connected to (row, col) sharing its colour,
- * including the cell itself. Empty seed cell yields an empty list.
+ * including the cell itself. An empty seed cell yields an empty list.
  */
 export function connectedRegion(board: Board, row: number, col: number): CellIndex[] {
   if (!board.inBounds(row, col) || board.isEmpty(row, col)) return [];
@@ -123,28 +108,6 @@ export function connectedRegion(board: Board, row: number, col: number): CellInd
   return out;
 }
 
-/** Size of the same-colour region that would include (row, col) if it were `colour`. */
-function clusterSize(board: Board, row: number, col: number, colour: ColorId): number {
-  const seen = new Set<CellIndex>([board.index(row, col)]);
-  const stack: CellIndex[] = [board.index(row, col)];
-  let n = 0;
-  while (stack.length > 0) {
-    const i = stack.pop() as CellIndex;
-    n += 1;
-    const { row: r, col: c } = board.coord(i);
-    for (const [dr, dc] of ORTHOGONAL) {
-      const nr = r + dr;
-      const nc = c + dc;
-      if (!board.inBounds(nr, nc)) continue;
-      const ni = board.index(nr, nc);
-      if (seen.has(ni) || board.getAt(ni) !== colour) continue;
-      seen.add(ni);
-      stack.push(ni);
-    }
-  }
-  return n;
-}
-
 /** True if aiming this ability at (row, col) would actually do something. */
 export function canApply(board: Board, id: PowerUpId, row: number, col: number): boolean {
   if (!board.inBounds(row, col)) return false;
@@ -154,8 +117,6 @@ export function canApply(board: Board, id: PowerUpId, row: number, col: number):
       return true;
     case 'pluck':
       return board.isFilled(row, col);
-    case 'paint':
-      return board.isFilled(row, col) && paintTargetColour(board, row, col) !== null;
     case 'reroll':
       return true;
   }
@@ -192,14 +153,6 @@ export function applyPowerUp(board: Board, id: PowerUpId, row: number, col: numb
       // The whole connected blob of that colour, not one tile — a single tile
       // barely dents the residue that colour-locked clearing leaves behind.
       for (const i of connectedRegion(board, row, col)) cleared.push(i);
-      break;
-    }
-    case 'paint': {
-      const colour = paintTargetColour(board, row, col);
-      if (colour !== null && board.isFilled(row, col)) {
-        board.set(row, col, colour);
-        recoloured.push({ index: board.index(row, col), colour });
-      }
       break;
     }
     case 'reroll': {

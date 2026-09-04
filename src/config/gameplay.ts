@@ -64,11 +64,26 @@ export const GAMEPLAY_CONFIG = {
    * Tiles of a colour you must clear to charge that colour's power-up.
    * Charging is per colour, so the colour you keep detonating is the tool you
    * keep earning — the cluster you build decides which ability you get.
+   *
+   * Raised 24 -> 36 after playtesting: meters refilled fast enough that a
+   * player who was nearly out of moves could always buy their way out, so the
+   * board never actually closed in. Power-ups should be an escape you ration,
+   * not a renewable one.
    */
-  POWERUP_CHARGE_COST: 24,
+  POWERUP_CHARGE_COST: 36,
   /** Every this many points, every meter tops up by POWERUP_MILESTONE_BONUS. */
   POWERUP_SCORE_MILESTONE: 2000,
   POWERUP_MILESTONE_BONUS: 8,
+
+  /**
+   * Relative spawn weight per colour id, as integers so selection stays exact
+   * and reproducible (rule 3). Equal weights mean uniform.
+   *
+   * Violet (4) is held 10% below the rest because it charges Pluck, which
+   * deletes a whole connected blob and was the strongest tool in playtesting.
+   * Starving it slightly is a gentler lever than weakening the ability itself.
+   */
+  COLOUR_SPAWN_WEIGHTS: [100, 100, 100, 100, 90] as readonly number[],
 
   // ── Feel ───────────────────────────────────────────────────────────────
   /** Pause between cascade generations so the chain is watchable. */

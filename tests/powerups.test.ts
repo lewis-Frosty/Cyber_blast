@@ -2,13 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { Board } from '../src/core/Board';
 import {
   addCharge,
+  colourHasPowerUp,
   connectedRegion,
+  powerUpForColourOrNull,
   addChargeAll,
   applyPowerUp,
   canApply,
   createMeters,
   isReady,
-  paintTargetColour,
   POWERUPS,
   powerUpForColour,
   spendCharge,
@@ -19,11 +20,15 @@ import { GAMEPLAY_CONFIG } from '../src/config/gameplay';
 import { EMPTY } from '../src/core/types';
 
 describe('power-up abilities', () => {
-  it('defines exactly one ability per palette colour', () => {
-    expect(POWERUPS).toHaveLength(GAMEPLAY_CONFIG.PALETTE_SIZE);
-    const colours = POWERUPS.map((p) => p.colour).sort();
-    expect(colours).toEqual([0, 1, 2, 3, 4]);
-    for (let c = 0; c < 5; c++) expect(powerUpForColour(c).colour).toBe(c);
+  it('covers every colour except lime, which deliberately has none', () => {
+    expect(POWERUPS).toHaveLength(4);
+    expect(POWERUPS.map((p) => p.colour).sort()).toEqual([0, 1, 3, 4]);
+    for (const c of [0, 1, 3, 4]) expect(powerUpForColour(c).colour).toBe(c);
+
+    // Lime charges nothing. This must be handled, not thrown past.
+    expect(colourHasPowerUp(2)).toBe(false);
+    expect(powerUpForColourOrNull(2)).toBeNull();
+    expect(() => powerUpForColour(2)).toThrow();
   });
 
   it('Flush clears the target row and column once each, every colour', () => {
@@ -80,29 +85,24 @@ describe('power-up abilities', () => {
     expect(b.filledCount()).toBe(0);
   });
 
-  it('Paint recolours a tile to its most common neighbour, merging it into the blob', () => {
-    // (1,1)=4 is surrounded by three colour-0 neighbours and one colour-1.
-    const b = Board.fromRows([
-      '.0......',
-      '0410....',
-      '.0......',
-      '........',
-      '........',
-      '........',
-      '........',
-      '........',
-    ]);
-    expect(paintTargetColour(b, 1, 1)).toBe(0);
-    const effect = applyPowerUp(b, 'paint', 1, 1);
-    expect(effect.cleared).toHaveLength(0);
-    expect(effect.recoloured).toEqual([{ index: b.index(1, 1), colour: 0 }]);
-    expect(b.get(1, 1)).toBe(0);
+  it('a full lime meter never becomes usable', () => {
+    const g = new GameState({ seed: 3 });
+    addCharge(g.meters, 2, g.meters.cost * 2);
+    expect(g.meters.charge[2]).toBe(g.meters.cost);
+    expect(g.readyColours()).not.toContain(2);
+    expect(g.usePowerUp(2, 0, 0)).toBeNull();
   });
 
-  it('Paint refuses a tile with no filled neighbours', () => {
-    const b = Board.fromRows(['........', '...3....', '........', '........', '........', '........', '........', '........']);
-    expect(paintTargetColour(b, 1, 3)).toBeNull();
-    expect(canApply(b, 'paint', 1, 3)).toBe(false);
+  it('clearing lime does not charge any other colour', () => {
+    const g = new GameState({ seed: 3 });
+    // Row 7 all lime but one cell; completing it clears 8 lime tiles.
+    for (let c = 0; c < 7; c++) g.board.set(7, c, 2);
+    g.setTrayPiece(0, { shape: shapeByName('1x1'), color: 2 });
+    const before = [...g.meters.charge];
+    const r = g.placePiece(0, 7, 7);
+    expect(r!.cascade.cleared.size).toBe(8);
+    expect(g.meters.charge).toEqual(before);
+    expect(r!.chargedColours).toEqual([]);
   });
 
   it('power-up clears never cascade — the tools stay predictable', () => {

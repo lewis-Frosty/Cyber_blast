@@ -180,6 +180,44 @@ describe('colour affinity (§3)', () => {
     expect(seen.size).toBe(5);
   });
 
+  it('honours integer spawn weights, holding violet below the rest', () => {
+    const b = new Board(8);
+    const rng = createRng(4242);
+    const counts = new Array<number>(5).fill(0);
+    const draws = 60000;
+    for (let i = 0; i < draws; i++) {
+      const c = pickColour(b, rng, {
+        paletteSize: 5,
+        affinity: 0,
+        weights: GAMEPLAY_CONFIG.COLOUR_SPAWN_WEIGHTS,
+      });
+      counts[c] = (counts[c] ?? 0) + 1;
+    }
+    // Weights [100,100,100,100,90] → violet ≈ 90/490 = 18.4%, others ≈ 20.4%.
+    const share = (i: number) => (counts[i] ?? 0) / draws;
+    expect(share(4)).toBeGreaterThan(0.170);
+    expect(share(4)).toBeLessThan(0.198);
+    for (const i of [0, 1, 2, 3]) {
+      expect(share(i)).toBeGreaterThan(0.190);
+      expect(share(i)).toBeLessThan(0.218);
+    }
+    // Violet must actually be the rarest.
+    expect(counts[4]).toBeLessThan(Math.min(...[0, 1, 2, 3].map((i) => counts[i] ?? 0)));
+  });
+
+  it('equal weights and no weights both give a uniform draw', () => {
+    const b = new Board(8);
+    for (const weights of [undefined, [1, 1, 1, 1, 1]]) {
+      const rng = createRng(99);
+      const counts = new Array<number>(5).fill(0);
+      for (let i = 0; i < 30000; i++) {
+        const c = pickColour(b, rng, { paletteSize: 5, affinity: 0, weights });
+        counts[c] = (counts[c] ?? 0) + 1;
+      }
+      for (const n of counts) expect(n / 30000).toBeGreaterThan(0.185);
+    }
+  });
+
   it('empty board falls back to uniform even at affinity 1', () => {
     const b = new Board(8);
     const rng = createRng(9);

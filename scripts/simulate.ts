@@ -51,13 +51,19 @@ function parseArgs(): Options {
   const affinity = num(flag('affinity') ?? positional[1], GAMEPLAY_CONFIG.COLOUR_AFFINITY);
   const depth = num(flag('depth') ?? positional[2], GAMEPLAY_CONFIG.MAX_CASCADE_DEPTH);
   const policy = (flag('policy') ?? 'planner') as Policy;
+  const cost = num(flag('cost'), GAMEPLAY_CONFIG.POWERUP_CHARGE_COST);
   SWEEP = args.includes('--sweep');
 
   return {
     games,
     policy,
     maxPlacements: num(flag('cap'), 500),
-    config: { ...GAMEPLAY_CONFIG, COLOUR_AFFINITY: affinity, MAX_CASCADE_DEPTH: depth },
+    config: {
+      ...GAMEPLAY_CONFIG,
+      COLOUR_AFFINITY: affinity,
+      MAX_CASCADE_DEPTH: depth,
+      POWERUP_CHARGE_COST: cost,
+    },
   };
 }
 
@@ -155,7 +161,16 @@ function chooseMove(state: GameState, opts: Options, rng: Rng): Candidate | null
   return best;
 }
 
-/** Spend a charged power-up to reopen a stuck board, as a player would. */
+/**
+ * Fraction of the board filled at which the planner starts spending power-ups
+ * rather than hoarding them. Playtesting showed a human reaches for an escape
+ * when the board is closing in, not when it has already closed — a bot that
+ * only fires when it is completely stuck cannot measure how much the abilities
+ * are propping the player up, which is the whole question here.
+ */
+const PANIC_FILL = 0.72;
+
+/** Spend a charged power-up to reopen a crowded or stuck board, as a player would. */
 function tryPowerUp(state: GameState): boolean {
   for (const colour of state.readyColours()) {
     if (powerUpForColour(colour).targeting === 'none') {
@@ -226,6 +241,17 @@ function runBatch(opts: Options): BatchStats {
     let guard = 0;
 
     while (!state.gameOver && guard < opts.maxPlacements) {
+      // Spend an ability while the board is merely crowded, the way a player
+      // does, not only once there is no legal move left.
+      if (
+        opts.policy === 'planner' &&
+        state.board.filledCount() / (state.board.size * state.board.size) >= PANIC_FILL &&
+        state.readyColours().length > 0 &&
+        tryPowerUp(state)
+      ) {
+        continue;
+      }
+
       const move = chooseMove(state, opts, rng);
       if (!move) {
         if (tryPowerUp(state)) continue;
@@ -279,7 +305,7 @@ function printDetail(st: BatchStats, opts: Options): void {
   const big = (st.clusterBuckets[2] ?? 0) + (st.clusterBuckets[3] ?? 0) + (st.clusterBuckets[4] ?? 0);
   console.log('');
   console.log(`CYBER BLAST — simulation  policy=${opts.policy}  games=${opts.games}  (${f(st.seconds)}s)`);
-  console.log(`config  MAX_CASCADE_DEPTH=${opts.config.MAX_CASCADE_DEPTH}  COLOUR_AFFINITY=${opts.config.COLOUR_AFFINITY}  ${opts.config.NEIGHBOUR_MODE}`);
+  console.log(`config  MAX_CASCADE_DEPTH=${opts.config.MAX_CASCADE_DEPTH}  COLOUR_AFFINITY=${opts.config.COLOUR_AFFINITY}  POWERUP_CHARGE_COST=${opts.config.POWERUP_CHARGE_COST}`);
   console.log('─'.repeat(70));
   console.log(`games ended naturally   ${st.ended}/${st.games}  (${f(pct(st.ended, st.games))}%), ${st.capped} hit the ${opts.maxPlacements} cap`);
   console.log(`placements per game     mean ${f(st.placements / st.games)}   median ${median(st.lengths)}`);

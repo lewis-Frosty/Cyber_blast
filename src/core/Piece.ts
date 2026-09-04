@@ -79,6 +79,29 @@ export interface ColourPickOptions {
   paletteSize: number;
   /** 0 = uniform, 1 = always the most common colour on the board. */
   affinity: number;
+  /**
+   * Relative spawn weight per colour id. Integers, so the running total and the
+   * comparison stay exact. Omitted means every colour is equally likely.
+   */
+  weights?: readonly number[];
+}
+
+/**
+ * Draw a colour from the weight table using one integer from the stream.
+ * Falls back to a uniform draw if the weights are missing or sum to nothing.
+ */
+function weightedColour(rng: Rng, paletteSize: number, weights: readonly number[] | undefined): ColorId {
+  if (!weights) return rng.int(paletteSize);
+  let total = 0;
+  for (let i = 0; i < paletteSize; i++) total += Math.max(0, Math.trunc(weights[i] ?? 0));
+  if (total <= 0) return rng.int(paletteSize);
+
+  let roll = rng.int(total);
+  for (let i = 0; i < paletteSize; i++) {
+    roll -= Math.max(0, Math.trunc(weights[i] ?? 0));
+    if (roll < 0) return i;
+  }
+  return paletteSize - 1;
 }
 
 /**
@@ -88,7 +111,7 @@ export interface ColourPickOptions {
  * An empty board always yields a uniform random colour.
  */
 export function pickColour(board: Board, rng: Rng, opts: ColourPickOptions): ColorId {
-  const { paletteSize, affinity } = opts;
+  const { paletteSize, affinity, weights } = opts;
   if (affinity > 0 && rng.next() < affinity) {
     const counts = board.colourCounts(paletteSize);
     const max = Math.max(...counts);
@@ -100,7 +123,7 @@ export function pickColour(board: Board, rng: Rng, opts: ColourPickOptions): Col
       return rng.pick(leaders);
     }
   }
-  return rng.int(paletteSize);
+  return weightedColour(rng, paletteSize, weights);
 }
 
 export function spawnPiece(board: Board, rng: Rng, opts: ColourPickOptions, shapes: readonly Shape[] = SHAPES): Piece {

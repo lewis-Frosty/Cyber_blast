@@ -6,15 +6,15 @@ import { createRng, type Rng } from './rng';
 import { createStats, recordPlacement, type GameStats } from './stats';
 import {
   addCharge,
+  colourHasPowerUp,
+  powerUpForColourOrNull,
   addChargeAll,
   applyPowerUp,
   canApply,
   createMeters,
   isReady,
-  powerUpById,
   spendCharge,
   type PowerUpEffect,
-  type PowerUpId,
   type PowerUpMeters,
 } from './powerups';
 import { GAMEPLAY_CONFIG, type GameplayConfig } from '../config/gameplay';
@@ -87,7 +87,11 @@ export class GameState {
     return spawnPiece(
       this.board,
       this.rng,
-      { paletteSize: this.config.PALETTE_SIZE, affinity: this.config.COLOUR_AFFINITY },
+      {
+        paletteSize: this.config.PALETTE_SIZE,
+        affinity: this.config.COLOUR_AFFINITY,
+        weights: this.config.COLOUR_SPAWN_WEIGHTS,
+      },
       this.shapes,
     );
   }
@@ -127,14 +131,18 @@ export class GameState {
   readyColours(): ColorId[] {
     if (!this.config.POWERUPS_ENABLED) return [];
     const out: ColorId[] = [];
-    for (let c = 0; c < this.config.PALETTE_SIZE; c++) if (isReady(this.meters, c)) out.push(c);
+    // A colour with no ability (lime) can never be 'ready', however full its meter.
+    for (let c = 0; c < this.config.PALETTE_SIZE; c++) {
+      if (colourHasPowerUp(c) && isReady(this.meters, c)) out.push(c);
+    }
     return out;
   }
 
   /** True if any charged power-up could change the board (so the game isn't stuck). */
   hasUsablePowerUp(): boolean {
     return this.readyColours().some((c) => {
-      const def = powerUpById(powerUpIdForColour(c));
+      const def = powerUpForColourOrNull(c);
+      if (!def) return false;
       // 'none' targeting (reroll) always does something; targeted abilities need
       // at least one legal cell, which a non-empty board always has.
       return def.targeting === 'none' || this.board.filledCount() > 0;
@@ -148,11 +156,11 @@ export class GameState {
   usePowerUp(colour: ColorId, row = 0, col = 0): PowerUpResult | null {
     if (!this.config.POWERUPS_ENABLED || this.gameOver) return null;
     if (!isReady(this.meters, colour)) return null;
-    const id = powerUpIdForColour(colour);
-    if (!canApply(this.board, id, row, col)) return null;
+    const def = powerUpForColourOrNull(colour);
+    if (!def || !canApply(this.board, def.id, row, col)) return null;
 
     spendCharge(this.meters, colour);
-    const effect = applyPowerUp(this.board, id, row, col);
+    const effect = applyPowerUp(this.board, def.id, row, col);
 
     const scoreGained = effect.cleared.length * this.config.POINTS_PER_CELL_POWERUP;
     this.score += scoreGained;
@@ -205,7 +213,10 @@ export class GameState {
     // wiped — in colour-locked mode that is always the placed piece's colour.
     const before = this.readyColours();
     if (this.config.POWERUPS_ENABLED) {
-      for (const i of cascade.cleared.keys()) addCharge(this.meters, this.board.getAt(i), 1);
+      for (const i of cascade.cleared.keys()) {
+        const colour = this.board.getAt(i);
+        if (colourHasPowerUp(colour)) addCharge(this.meters, colour, 1);
+      }
     }
 
     this.board.clearCells(cascade.cleared.keys());
@@ -238,10 +249,4 @@ export class GameState {
       gameOver: this.gameOver,
     };
   }
-}
-
-function powerUpIdForColour(colour: ColorId): PowerUpId {
-  // Kept local so gameState doesn't re-export the power-up table.
-  const ids: PowerUpId[] = ['flush', 'nova', 'paint', 'reroll', 'pluck'];
-  return ids[colour] ?? 'pluck';
 }

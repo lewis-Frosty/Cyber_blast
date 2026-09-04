@@ -411,7 +411,7 @@ export class GameScene extends Phaser.Scene {
     if (!cell) return; // tap off the board does nothing; use ESC or the button to cancel
     if (!canApply(this.state.board, t.def.id, cell.row, cell.col)) {
       audio.invalidThunk();
-      this.flashHint(t.def.id === 'paint' ? 'Paint needs a tile with filled neighbours' : 'Pick a tile');
+      this.flashHint(t.def.id === 'pluck' ? 'Pluck needs a filled tile' : 'Pick a tile');
       return;
     }
     this.firePowerUp(t.colour, cell.row, cell.col);
