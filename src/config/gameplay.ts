@@ -22,11 +22,18 @@ export const GAMEPLAY_CONFIG = {
   // ── Cascade tuning — the critical knobs ────────────────────────────────
   /**
    * Maximum number of cascade generations after generation 0.
-   * The cascade is a flood fill of ONE colour, so the depth cap is what stops
-   * a big cluster paying out in full — and that payout is the whole reward for
-   * having built the cluster. Keep it generous.
+   * The cascade is a flood fill of ONE colour, so the depth cap is what stops a
+   * big cluster paying out in full.
+   *
+   * Tuned in Step 8 by sweeping 5 depths x 4 affinities, 1000 games at the
+   * finalists. At 3 a typical game runs 129 placements (mean 185) and 89% of
+   * games reach a game over. Raising it to 6 pushed length to 430 and dropped
+   * the end rate to 22%: the game stopped being able to kill a competent
+   * player. Dropping it to 2 shortens games further but caps the chain at a
+   * single extra ring, which risks making the differentiating mechanic
+   * invisible (§3.1's "too stingy" failure).
    */
-  MAX_CASCADE_DEPTH: 10,
+  MAX_CASCADE_DEPTH: 3,
   /** 'orthogonal' = 4-way propagation. 'diagonal' = 8-way (much longer chains). */
   NEIGHBOUR_MODE: 'orthogonal' as NeighbourMode,
 
@@ -34,11 +41,15 @@ export const GAMEPLAY_CONFIG = {
    * Colour spawn weighting.
    *   0.0 = uniform random colour for every spawned piece.
    *   1.0 = every spawned piece takes the most common colour currently on the board.
-   * You need enough of a colour on the board to build a cluster worth
-   * detonating, so this is one of the two knobs that decide whether the game
-   * has anything to plan.
+   * Tuned to 0 in Step 8. §2.2 warned that uniform random "makes cascades feel
+   * arbitrary", but that was written for the whole-line rule, where the player
+   * did not choose which colour detonated. Under colour-locked clearing the
+   * player builds the cluster deliberately, so weighted spawning stops being a
+   * legibility aid and becomes free help: at 0.45 games ran 454 placements and
+   * only 15% ended. Revisit this against real playtesting — it is the value
+   * most likely to need moving.
    */
-  COLOUR_AFFINITY: 0.45,
+  COLOUR_AFFINITY: 0.0,
 
   // ── Scoring ────────────────────────────────────────────────────────────
   /** Generation N cells score POINTS_PER_CELL_BASE × (N + 1) each. */

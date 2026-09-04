@@ -80,14 +80,19 @@ describe('GameState turn flow', () => {
     expect(g.board.get(6, 3)).toBe(EMPTY);
   });
 
-  it('detonates a whole cluster when the line is completed in that colour', () => {
-    const g = new GameState({ seed: 1 });
-    // A 3x3 blob of colour 2 in the middle, and a row that only needs its last
-    // cell — completed with colour 2, adjacent to the blob.
+  /** Board: a 3x3 colour-2 blob, and a row needing only its last cell. */
+  function blobAndLine(depth: number): GameState {
+    const g = new GameState({ seed: 1, config: { ...GAMEPLAY_CONFIG, MAX_CASCADE_DEPTH: depth } });
     for (let r = 2; r <= 4; r++) for (let c = 2; c <= 4; c++) g.board.set(r, c, 2);
     for (let c = 0; c < 7; c++) g.board.set(5, c, c === 3 ? 2 : 1);
     g.setTrayPiece(0, { shape: shapeByName('1x1'), color: 2 });
+    return g;
+  }
 
+  it('detonates a whole cluster when the line is completed in that colour', () => {
+    // Depth is pinned rather than inherited: this test is about the mechanic,
+    // and it should not fail every time MAX_CASCADE_DEPTH is re-tuned.
+    const g = blobAndLine(10);
     const r = g.placePiece(0, 5, 7);
     expect(r).not.toBeNull();
     // gen0 = the two colour-2 cells in row 5; the chain then eats the 3x3 blob.
@@ -96,6 +101,20 @@ describe('GameState turn flow', () => {
     // The colour-1 residue in row 5 is untouched.
     expect(g.board.get(5, 0)).toBe(1);
     expect(g.board.filledCount()).toBe(6);
+  });
+
+  it('leaves the far side of a cluster standing when the depth cap bites', () => {
+    // The same board at the shipped depth of 3: the chain reaches the near part
+    // of the blob and stops, so a big cluster is only fully cashed in when it
+    // is reachable within the cap. This is the tuning knob doing its job.
+    const g = blobAndLine(3);
+    const r = g.placePiece(0, 5, 7);
+    expect(r).not.toBeNull();
+    expect(r!.cascade.cleared.size).toBe(9);
+    expect(r!.cascade.maxGeneration).toBe(3);
+    expect(r!.cascade.truncated).toBe(true);
+    // Two colour-2 cells survive out at the far edge of the blob.
+    expect(g.board.colourCounts(GAMEPLAY_CONFIG.PALETTE_SIZE)[2]).toBe(2);
   });
 
   it('detects game over when no remaining tray piece fits', () => {

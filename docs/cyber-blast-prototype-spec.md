@@ -351,7 +351,17 @@ Every one of these is a legitimate Phase 2/3 item. Every one of them is also a w
 Move to Phase 2 only when **all** of these are true:
 
 1. All cascade unit tests pass.
-2. Debug data shows cascades of depth ≥ 2 occurring at a rate that feels rewarding but not constant — a defensible starting target is roughly **one in every 6–10 placements**, to be validated against actual playtesting rather than accepted as given.
+2. ~~Debug data shows cascades of depth ≥ 2 occurring at a rate that feels rewarding but not constant — a defensible starting target is roughly **one in every 6–10 placements**~~ **— SUPERSEDED, see below.**
+
+   **Revised criterion (Step 8, measured).** The depth ≥ 2 rate is not tunable under colour-locked clearing. A 5 × 4 sweep of `MAX_CASCADE_DEPTH` × `COLOUR_AFFINITY` — 20 configurations, from depth 2 / affinity 0.00 to depth 10 / affinity 0.45 — held the rate between **3.5 and 4.1 placements** throughout. Neither knob moves it.
+
+   That is structural, not a tuning failure. Completing a line in a colour that has any adjacent cluster reaches generation 2 almost by construction; the depth cap only truncates chains that would have gone *deeper*, and colour affinity changes how big clusters get rather than whether adjacency exists at all. The original 6–10 target was written for the whole-line rule, where reaching depth 2 was itself the rare event.
+
+   Under colour-locked clearing the rare, rewarding event is a **large single detonation**, and that *is* controllable — the share of clears removing 7+ cells ranges from 43% to 62% across the same sweep. So:
+
+   > **Debug data shows large detonations (a single clear removing 7 or more cells) at roughly 40–55% of all clears, with a typical game running 50–150 placements and at least 85% of games reaching a game over.** Validate against playtesting rather than accepting as given.
+
+   Measured at the shipped values (`MAX_CASCADE_DEPTH: 3`, `COLOUR_AFFINITY: 0.0`, 1000 games): 44.5% of clears remove 7+ cells, median game length 129 placements, 89.0% of games end.
 3. New players understand the cascade mechanic without verbal explanation.
 4. You personally want to play another round after a game-over — repeatedly, and not because you built it.
 5. At least 5 external playtesters have played, and their feedback has been logged.

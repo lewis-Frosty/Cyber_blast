@@ -290,12 +290,14 @@ function printDetail(st: BatchStats, opts: Options): void {
   console.log('');
   console.log('cascade depth (per clearing placement)');
   console.log(`  0:${st.depthBuckets[0]}  1:${st.depthBuckets[1]}  2:${st.depthBuckets[2]}  3:${st.depthBuckets[3]}  4+:${st.depthBuckets[4]}`);
-  console.log(`  depth>=2 rate         1 in ${f(deepRate(st))} placements   (spec §10 target: 1 in 6-10)`);
+  // The original §10 depth target was retired in Step 8: the rate is not
+  // tunable under colour-locked clearing. Reported for information only.
+  console.log(`  depth>=2 rate         1 in ${f(deepRate(st))} placements   (not tunable — see §10)`);
   console.log(`  deepest seen          ${st.deepest}`);
   console.log('');
   console.log('clear size (cells removed in one clear)');
   console.log(`  1-3:${st.clusterBuckets[0]}  4-6:${st.clusterBuckets[1]}  7-10:${st.clusterBuckets[2]}  11-15:${st.clusterBuckets[3]}  16+:${st.clusterBuckets[4]}`);
-  console.log(`  clears of 7+          ${f(pct(big, clears))}% of clears`);
+  console.log(`  clears of 7+          ${f(pct(big, clears))}% of clears   (§10 revised target: 40-55%)`);
   console.log(`  biggest single clear  ${st.biggestClear} cells`);
   console.log('');
 }
@@ -314,7 +316,8 @@ function runSweep(base: Options): void {
 
   console.log('');
   console.log(`CYBER BLAST — tuning sweep  policy=${base.policy}  ${base.games} games per cell  cap=${base.maxPlacements}`);
-  console.log('targets:  LEN 50-150 placements   END% high   D>=2 one in 6-10');
+  console.log('targets (§10 as revised in Step 8):  LEN 50-150   END% >=85   7+CLR 40-55%');
+  console.log('D>=2 is reported for information only — it is not tunable under colour-locked clearing.');
   console.log('');
   console.log('DEPTH  AFFIN    LEN   MEDIAN   END%   D>=2     SCORE   CLR%   7+CLR  VERDICT');
   console.log('─'.repeat(80));
@@ -332,10 +335,11 @@ function runSweep(base: Options): void {
       const clears = st.depthBuckets.reduce((a, b) => a + b, 0);
       const big = (st.clusterBuckets[2] ?? 0) + (st.clusterBuckets[3] ?? 0) + (st.clusterBuckets[4] ?? 0);
 
+      const bigPct = pct(big, clears);
       const lenOk = len >= 50 && len <= 150;
-      const drOk = dr >= 6 && dr <= 10;
-      const endOk = endPct >= 90;
-      const hits = [lenOk, drOk, endOk].filter(Boolean).length;
+      const bigOk = bigPct >= 40 && bigPct <= 55;
+      const endOk = endPct >= 85;
+      const hits = [lenOk, bigOk, endOk].filter(Boolean).length;
       const verdict = hits === 3 ? '*** ALL 3' : hits === 2 ? '**  2 of 3' : hits === 1 ? '*   1 of 3' : '    none';
 
       console.log(
