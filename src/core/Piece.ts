@@ -1,5 +1,5 @@
 import type { Board } from './Board';
-import type { ColorId } from './types';
+import { BLOCKED, type ColorId } from './types';
 import type { Rng } from './rng';
 
 /** A polyomino shape. Cells are [dRow, dCol] offsets, normalised so min row = min col = 0. */
@@ -68,6 +68,14 @@ export const SHAPES: readonly Shape[] = [
   shapeFromRows('Z-h', ['##.', '.##']),
   shapeFromRows('Z-v', ['.#', '##', '#.']),
 ];
+
+/** The single grey cube. Placing it writes a permanent wall cell. */
+export const OBSTACLE_PIECE: Piece = { shape: bar('1x1', 1, 1), color: BLOCKED };
+
+/** True if this tray piece is the grey cube rather than a coloured piece. */
+export function isObstacle(piece: Piece): boolean {
+  return piece.color === BLOCKED;
+}
 
 export function shapeByName(name: string): Shape {
   const s = SHAPES.find((x) => x.name === name);

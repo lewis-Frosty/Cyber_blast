@@ -87,9 +87,14 @@ export const GAMEPLAY_CONFIG = {
    * power-ups were too available.
    *   cost 36: 75.0% of games end, median 202 placements, 6.0 power-ups/game
    *   cost 54: 82.3%, median 89, 4.1/game
-   *   cost 72: 89.0%, median 56, 2.7/game   <- chosen
+   *   cost 72: 89.0%, median 56, 2.7/game
+   *
+   * Settled at 40 in round 3: 72 restored the difficulty on paper but made the
+   * power-up rotation feel wrong in the hand, and rotation is the thing being
+   * tuned. Difficulty is now carried by the obstacle mechanic below, which
+   * limits game length without taxing the chain payoff the game is built on.
    */
-  POWERUP_CHARGE_COST: 72,
+  POWERUP_CHARGE_COST: 40,
   /** Every this many points, every meter tops up by POWERUP_MILESTONE_BONUS. */
   POWERUP_SCORE_MILESTONE: 2000,
   POWERUP_MILESTONE_BONUS: 8,
@@ -103,6 +108,42 @@ export const GAMEPLAY_CONFIG = {
    * Starving it slightly is a gentler lever than weakening the ability itself.
    */
   COLOUR_SPAWN_WEIGHTS: [100, 100, 100, 100, 90] as readonly number[],
+
+  // ── Obstacles ──────────────────────────────────────────────────────────
+  /**
+   * Periodically a single grey cube joins the tray. Once placed it is part of
+   * the wall forever: it counts as filled for completing a line, matches no
+   * colour, and nothing removes it.
+   *
+   * This is the difficulty lever that does not fight the core loop. Capping
+   * chain depth made the game harder by taking away the payoff players come
+   * for; obstacles make it harder by shrinking the board they get to play on,
+   * and each one is a real decision — spend it somewhere it will not sever a
+   * cluster you are building.
+   */
+  OBSTACLES_ENABLED: true,
+  /**
+   * 'placements' grants one every N pieces; 'points' one every N points.
+   *
+   * A/B at 600 games each settled this. Every 100 placements barely registered
+   * — 1.6 cubes in an average game, median length 159 against a control of
+   * 169 — because a typical game never runs long enough to earn many. The
+   * points trigger works, and it works for a reason worth keeping: a stronger
+   * player scores faster, so they meet more walls. Difficulty tracks skill
+   * instead of the clock, which no constant can do.
+   *
+   *   control (off)      75.5% of games end, median 169, 0 cubes
+   *   /100 placements     86.8%, median 159, 1.6 cubes
+   *   /1000 points        97.8%, median 103, 13.2 cubes
+   *   /1500 points        91.3%, median 103, 8.5 cubes   <- chosen
+   *   /2500 points        91.0%, median 127, 6.0 cubes
+   *
+   * 1000 ended nearly every game and buried a fifth of the board; 1500 keeps
+   * the pressure while leaving a long run possible.
+   */
+  OBSTACLE_TRIGGER: 'points' as 'placements' | 'points',
+  OBSTACLE_EVERY_PLACEMENTS: 100,
+  OBSTACLE_EVERY_POINTS: 1500,
 
   // ── Feel ───────────────────────────────────────────────────────────────
   /** Pause between cascade generations so the chain is watchable. */

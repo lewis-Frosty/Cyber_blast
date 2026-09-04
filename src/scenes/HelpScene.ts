@@ -122,6 +122,24 @@ export class HelpScene extends Phaser.Scene {
       y += 24;
     }
 
+    y += 6;
+    this.add
+      .text(28, y, 'THE WALL', { fontFamily: THEME.fonts.body, fontSize: '14px', fontStyle: '700', color: '#FFB627' })
+      .setOrigin(0, 0);
+    y += 22;
+    for (const line of [
+      'Every ' + GAMEPLAY_CONFIG.OBSTACLE_EVERY_POINTS + ' points a grey cube joins',
+      'your tray. Placed, it is there for good — it',
+      'fills a line but never clears, and it cuts any',
+      'chain that runs through it. Put it somewhere',
+      'it will not split what you are building.',
+    ]) {
+      this.add
+        .text(28, y, line, { fontFamily: THEME.fonts.body, fontSize: '14px', color: '#E8E6FF' })
+        .setOrigin(0, 0);
+      y += 19;
+    }
+
     const btn = this.add
       .text(w / 2, h - 44, 'GOT IT', {
         fontFamily: THEME.fonts.body,

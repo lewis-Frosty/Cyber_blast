@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { THEME, type GlyphName } from '../config/theme';
-import type { ColorId } from '../core/types';
+import { BLOCKED, type ColorId } from '../core/types';
 import { renderSettings } from './settings';
 
 /**
@@ -23,7 +23,10 @@ export function blockTextureSize(): number {
   return THEME.layout.cellSize + GLOW_PAD * 2;
 }
 
+export const OBSTACLE_TEXTURE = 'block-obstacle';
+
 export function blockTextureKey(color: ColorId, glyph: boolean = renderSettings.glyphMode): string {
+  if (color === BLOCKED) return OBSTACLE_TEXTURE;
   return `block-${color}-${glyph ? 'glyph' : 'plain'}`;
 }
 
@@ -132,6 +135,38 @@ export function generateTextures(scene: Phaser.Scene): void {
       tex.refresh();
     }
   });
+
+  // Obstacle: flat, unlit, hatched. It must not read as a sixth playable colour,
+  // so it gets no glow and no glyph — the two things every real colour has.
+  if (!tm.exists(OBSTACLE_TEXTURE)) {
+    const tex = tm.createCanvas(OBSTACLE_TEXTURE, size, size);
+    if (!tex) throw new Error('Could not create obstacle texture');
+    const ctx = tex.getContext();
+    const x = GLOW_PAD;
+    const y = GLOW_PAD;
+    ctx.fillStyle = THEME.colours.blockedCss;
+    roundedRectPath(ctx, x, y, cell, cell, 4);
+    ctx.fill();
+
+    ctx.save();
+    roundedRectPath(ctx, x, y, cell, cell, 4);
+    ctx.clip();
+    ctx.strokeStyle = 'rgba(0,0,0,0.34)';
+    ctx.lineWidth = 3;
+    for (let d = -cell; d < cell * 2; d += 9) {
+      ctx.beginPath();
+      ctx.moveTo(x + d, y);
+      ctx.lineTo(x + d + cell, y + cell);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+    ctx.lineWidth = 2;
+    roundedRectPath(ctx, x + 2, y + 2, cell - 4, cell - 4, 3);
+    ctx.stroke();
+    tex.refresh();
+  }
 
   if (!tm.exists(TEXTURE.emptyCell)) {
     const tex = tm.createCanvas(TEXTURE.emptyCell, cell, cell);

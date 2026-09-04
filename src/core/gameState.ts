@@ -1,6 +1,6 @@
 import { Board } from './Board';
 import { resolveBoard, type CascadeResult, type Generation0 } from './cascade';
-import { spawnPiece, SHAPES, type Piece, type Shape } from './Piece';
+import { isObstacle, OBSTACLE_PIECE, spawnPiece, SHAPES, type Piece, type Shape } from './Piece';
 import { colourMultiplier, scoreTurn, type ScoreBreakdown } from './scoring';
 import { createRng, type Rng } from './rng';
 import { createStats, recordPlacement, type GameStats } from './stats';
@@ -68,6 +68,9 @@ export class GameState {
   readonly meters: PowerUpMeters;
   score = 0;
   gameOver = false;
+  /** Grey cubes earned but not yet handed to the tray. */
+  private pendingObstacles = 0;
+  private nextObstacleAt: number;
   private nextMilestone: number;
   private readonly rng: Rng;
   private readonly shapes: readonly Shape[];
@@ -80,6 +83,7 @@ export class GameState {
     this.stats = createStats();
     this.meters = createMeters(this.config.PALETTE_SIZE, this.config.POWERUP_CHARGE_COST);
     this.nextMilestone = this.config.POWERUP_SCORE_MILESTONE;
+    this.nextObstacleAt = this.obstacleInterval();
     this.tray = new Array<Piece | null>(this.config.TRAY_SIZE).fill(null);
     this.refillTray();
     this.gameOver = this.checkGameOver();
@@ -100,6 +104,36 @@ export class GameState {
 
   private refillTray(): void {
     for (let i = 0; i < this.tray.length; i++) this.tray[i] = this.spawn();
+
+    // Hand over earned grey cubes, at most one per refill so a bad run never
+    // arrives as a tray of nothing but wall.
+    if (this.pendingObstacles > 0) {
+      this.tray[this.tray.length - 1] = OBSTACLE_PIECE;
+      this.pendingObstacles -= 1;
+      this.stats.obstaclesGranted += 1;
+    }
+  }
+
+  private obstacleInterval(): number {
+    return this.config.OBSTACLE_TRIGGER === 'points'
+      ? this.config.OBSTACLE_EVERY_POINTS
+      : this.config.OBSTACLE_EVERY_PLACEMENTS;
+  }
+
+  /**
+   * Award grey cubes once the configured threshold is crossed. Driven by the
+   * placement count or the score depending on OBSTACLE_TRIGGER; both are
+   * monotonic, so this stays deterministic and replayable.
+   */
+  private accrueObstacles(): void {
+    if (!this.config.OBSTACLES_ENABLED) return;
+    const step = this.obstacleInterval();
+    if (step <= 0) return;
+    const progress = this.config.OBSTACLE_TRIGGER === 'points' ? this.score : this.stats.placements;
+    while (progress >= this.nextObstacleAt) {
+      this.pendingObstacles += 1;
+      this.nextObstacleAt += step;
+    }
   }
 
   /** Force a specific piece into a tray slot (tests / debug). */
@@ -174,6 +208,7 @@ export class GameState {
     }
     this.score += scoreGained;
     this.stats.totalScore += scoreGained;
+    this.accrueObstacles();
     this.stats.cellsCleared += effect.cleared.length;
     this.stats.powerUpsUsed += 1;
     this.applyMilestones();
@@ -212,6 +247,8 @@ export class GameState {
     const placedCells = this.board.place(piece.shape, piece.color, row, col);
     this.tray[trayIndex] = null;
 
+    // A grey cube can complete a line, but it is not a colour, so nothing
+    // clears. That is the trade the player makes when they spend one there.
     const { generation0, ...cascade } = resolveBoard(this.board, {
       maxDepth: this.config.MAX_CASCADE_DEPTH,
       neighbourMode: this.config.NEIGHBOUR_MODE,
@@ -235,7 +272,9 @@ export class GameState {
     this.board.clearCells(cascade.cleared.keys());
     this.score += score.total;
     recordPlacement(this.stats, cascade.maxGeneration, cascade.cleared.size, score.total);
+    if (isObstacle(piece)) this.stats.obstaclesPlaced += 1;
     this.applyMilestones();
+    this.accrueObstacles();
 
     const chargedColours = this.readyColours().filter((c) => !before.includes(c));
 

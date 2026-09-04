@@ -1,5 +1,5 @@
 import type { Board } from './Board';
-import type { CellIndex, ColorId } from './types';
+import { BLOCKED, type CellIndex, type ColorId } from './types';
 
 /**
  * Per-colour power-ups. Pure — no engine dependencies.
@@ -85,8 +85,9 @@ const ORTHOGONAL: readonly (readonly [number, number])[] = [
  * including the cell itself. An empty seed cell yields an empty list.
  */
 export function connectedRegion(board: Board, row: number, col: number): CellIndex[] {
-  if (!board.inBounds(row, col) || board.isEmpty(row, col)) return [];
+  if (!board.inBounds(row, col) || board.isEmpty(row, col) || board.isBlocked(row, col)) return [];
   const colour = board.get(row, col);
+  if (colour === BLOCKED) return [];
   const start = board.index(row, col);
   const seen = new Set<CellIndex>([start]);
   const stack: CellIndex[] = [start];
@@ -116,7 +117,7 @@ export function canApply(board: Board, id: PowerUpId, row: number, col: number):
     case 'nova':
       return true;
     case 'pluck':
-      return board.isFilled(row, col);
+      return board.isFilled(row, col) && !board.isBlocked(row, col);
     case 'reroll':
       return true;
   }
@@ -133,7 +134,9 @@ export function applyPowerUp(board: Board, id: PowerUpId, row: number, col: numb
   let rerollTray = false;
 
   const clearAt = (r: number, c: number): void => {
-    if (!board.inBounds(r, c) || board.isEmpty(r, c)) return;
+    // Obstacles are permanent: no ability removes one, so Flush and Nova punch
+    // around them rather than through them.
+    if (!board.inBounds(r, c) || board.isEmpty(r, c) || board.isBlocked(r, c)) return;
     cleared.push(board.index(r, c));
   };
 

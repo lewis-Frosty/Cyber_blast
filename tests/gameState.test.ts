@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { GameState } from '../src/core/gameState';
-import { shapeByName } from '../src/core/Piece';
+import { OBSTACLE_PIECE, shapeByName } from '../src/core/Piece';
 import { GAMEPLAY_CONFIG } from '../src/config/gameplay';
-import { EMPTY } from '../src/core/types';
+import { BLOCKED, EMPTY } from '../src/core/types';
 import { Board } from '../src/core/Board';
 import { createRng } from '../src/core/rng';
 import { pickColour } from '../src/core/Piece';
@@ -260,5 +260,106 @@ describe('colour affinity (§3)', () => {
     const seen = new Set<number>();
     for (let i = 0; i < 500; i++) seen.add(pickColour(b, rng, { paletteSize: 5, affinity: 1 }));
     expect(seen.size).toBe(5);
+  });
+});
+
+describe('obstacle scheduling', () => {
+  const cfg = (over: Partial<typeof GAMEPLAY_CONFIG>) => ({ ...GAMEPLAY_CONFIG, ...over });
+
+  /** Place any legal piece, preferring tray slot `want` when it fits. */
+  function placeAny(g: GameState, want = 0): boolean {
+    for (const t of [want, 0, 1, 2]) {
+      const piece = g.tray[t];
+      if (!piece) continue;
+      for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+          if (g.board.canPlace(piece.shape, r, c) && g.placePiece(t, r, c)) return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  it('grants a grey cube every N placements and hands it over at the next refill', () => {
+    const g = new GameState({
+      seed: 5,
+      config: cfg({ OBSTACLE_TRIGGER: 'placements', OBSTACLE_EVERY_PLACEMENTS: 4 }),
+    });
+    for (let i = 0; i < 3; i++) placeAny(g);
+    expect(g.stats.obstaclesGranted).toBe(0);
+
+    // The 4th placement earns one; it arrives with the tray refill that follows.
+    for (let i = 0; i < 9; i++) placeAny(g);
+    expect(g.stats.obstaclesGranted).toBeGreaterThanOrEqual(1);
+    expect(g.stats.obstaclesGranted).toBeLessThanOrEqual(3);
+  });
+
+  it('grants on score instead when the trigger is points', () => {
+    const g = new GameState({
+      seed: 5,
+      config: cfg({ OBSTACLE_TRIGGER: 'points', OBSTACLE_EVERY_POINTS: 50 }),
+    });
+    // A full cyan row scores 8 x 10 + 1 = 81, crossing the 50-point threshold.
+    for (let c = 0; c < 7; c++) g.board.set(7, c, 0);
+    g.setTrayPiece(0, { shape: shapeByName('1x1'), color: 0 });
+    expect(g.placePiece(0, 7, 7)!.score.total).toBe(81);
+
+    // Owed now, handed over at the refill that follows the next two placements.
+    expect(g.stats.obstaclesGranted).toBe(0);
+    placeAny(g);
+    placeAny(g);
+    expect(g.stats.obstaclesGranted).toBe(1);
+    expect(g.tray.some((p) => p !== null && p.color === BLOCKED)).toBe(true);
+  });
+
+  it('does not grant on placements when the trigger is points', () => {
+    const g = new GameState({
+      seed: 5,
+      config: cfg({ OBSTACLE_TRIGGER: 'points', OBSTACLE_EVERY_POINTS: 100000 }),
+    });
+    for (let i = 0; i < 24; i++) if (!placeAny(g)) break;
+    expect(g.stats.obstaclesGranted).toBe(0);
+  });
+
+  it('grants nothing when obstacles are disabled', () => {
+    const g = new GameState({ seed: 5, config: cfg({ OBSTACLES_ENABLED: false }) });
+    for (let i = 0; i < 20; i++) if (!placeAny(g)) break;
+    expect(g.stats.obstaclesGranted).toBe(0);
+    expect(g.board.blockedCount()).toBe(0);
+  });
+
+  it('placing a grey cube completes a line but clears nothing', () => {
+    const g = new GameState({ seed: 5 });
+    // Row 7 full of colour 0 except the last cell.
+    for (let c = 0; c < 7; c++) g.board.set(7, c, 0);
+    g.setTrayPiece(0, OBSTACLE_PIECE);
+
+    const r = g.placePiece(0, 7, 7);
+    expect(r).not.toBeNull();
+    // The row IS full — but grey is not a colour, so nothing detonates.
+    expect(r!.generation0.rows).toEqual([7]);
+    expect(r!.cascade.cleared.size).toBe(0);
+    expect(r!.score.clears).toBe(0);
+    // Every cell in that row survives, wall included.
+    expect(g.board.toRows()[7]).toBe('0000000#');
+    expect(g.board.blockedCount()).toBe(1);
+  });
+
+  it('an obstacle severs a chain that would otherwise run through it', () => {
+    const g = new GameState({ seed: 5 });
+    for (let c = 0; c < 7; c++) g.board.set(7, c, c === 0 ? 3 : 1);
+    g.board.set(6, 0, 3);
+    g.board.set(5, 0, BLOCKED); // wall
+    g.board.set(4, 0, 3); // stranded on the far side
+    g.setTrayPiece(0, { shape: shapeByName('1x1'), color: 3 });
+
+    const r = g.placePiece(0, 7, 7);
+    expect(r).not.toBeNull();
+    // gen0 is (7,0) plus the placed (7,7); (6,0) follows at gen1. The wall at
+    // (5,0) stops the chain, so (4,0) survives on the far side of it.
+    expect(r!.cascade.cleared.size).toBe(3);
+    expect(r!.cascade.maxGeneration).toBe(1);
+    expect(g.board.get(4, 0)).toBe(3);
+    expect(g.board.get(5, 0)).toBe(BLOCKED);
   });
 });

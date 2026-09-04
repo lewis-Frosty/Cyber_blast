@@ -1,5 +1,5 @@
 import type { Board } from './Board';
-import { EMPTY, type CellIndex, type ColorId } from './types';
+import { BLOCKED, EMPTY, type CellIndex, type ColorId } from './types';
 import type { NeighbourMode } from '../config/gameplay';
 
 /**
@@ -76,7 +76,11 @@ export function findGeneration0(board: Board, opts: LineOptions): Generation0 {
   const cells = new Set<CellIndex>();
 
   const take = (i: CellIndex): void => {
-    if (board.getAt(i) === lockedColour) cells.add(i);
+    const v = board.getAt(i);
+    // An obstacle is never a clear target, even if lockedColour were somehow
+    // BLOCKED — a grey piece completing a line must not dissolve the wall.
+    if (v === EMPTY || v === BLOCKED) return;
+    if (v === lockedColour) cells.add(i);
   };
 
   for (const r of rows) for (let c = 0; c < board.size; c++) take(board.index(r, c));
@@ -99,7 +103,8 @@ export function resolveClears(board: Board, generation0: ReadonlySet<CellIndex>,
   const gen0: CellIndex[] = [];
   for (const i of generation0) {
     if (i < 0 || i >= size * size) throw new RangeError(`Generation-0 index ${i} out of bounds`);
-    if (board.getAt(i) === EMPTY) continue; // never "clear" an empty cell
+    const seed = board.getAt(i);
+    if (seed === EMPTY || seed === BLOCKED) continue; // never clear empty or wall
     if (!cleared.has(i)) {
       cleared.set(i, 0);
       gen0.push(i);
@@ -133,7 +138,7 @@ export function resolveClears(board: Board, generation0: ReadonlySet<CellIndex>,
         const n = board.index(nr, nc);
         if (cleared.has(n)) continue;
         const nColour = board.getAt(n);
-        if (nColour === EMPTY || nColour !== colour) continue;
+        if (nColour === EMPTY || nColour === BLOCKED || nColour !== colour) continue;
         cleared.set(n, generation);
         next.push(n);
       }

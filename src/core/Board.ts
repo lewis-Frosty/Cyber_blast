@@ -1,4 +1,4 @@
-import { EMPTY, type Cell, type CellIndex, type ColorId, type Coord } from './types';
+import { BLOCKED, EMPTY, type Cell, type CellIndex, type ColorId, type Coord } from './types';
 import type { Shape } from './Piece';
 
 /**
@@ -22,8 +22,8 @@ export class Board {
   }
 
   /**
-   * Build a board from ASCII rows. '.' = empty, digits = colour ids.
-   * Whitespace is ignored so rows can be indented in tests.
+   * Build a board from ASCII rows. '.' = empty, '#' = a permanent obstacle,
+   * digits = colour ids. Whitespace is ignored so rows can be indented.
    */
   static fromRows(rows: readonly string[]): Board {
     const size = rows.length;
@@ -31,7 +31,9 @@ export class Board {
     for (const raw of rows) {
       const row = raw.replace(/\s+/g, '');
       if (row.length !== size) throw new Error(`Row "${row}" length ${row.length} != ${size}`);
-      for (const ch of row) cells.push(ch === '.' ? EMPTY : Number.parseInt(ch, 10));
+      for (const ch of row) {
+        cells.push(ch === '.' ? EMPTY : ch === '#' ? BLOCKED : Number.parseInt(ch, 10));
+      }
     }
     return new Board(size, cells);
   }
@@ -72,8 +74,20 @@ export class Board {
     return this.get(row, col) === EMPTY;
   }
 
+  /** Filled includes obstacles: a wall cube completes a line like anything else. */
   isFilled(row: number, col: number): boolean {
     return this.get(row, col) !== EMPTY;
+  }
+
+  /** True for a permanent obstacle — filled, but never a colour and never cleared. */
+  isBlocked(row: number, col: number): boolean {
+    return this.get(row, col) === BLOCKED;
+  }
+
+  blockedCount(): number {
+    let n = 0;
+    for (const v of this.toArray()) if (v === BLOCKED) n++;
+    return n;
   }
 
   /** True if every cell of `shape` anchored at (row, col) is in bounds and empty. */
@@ -113,10 +127,14 @@ export class Board {
     return placed;
   }
 
-  /** Set every listed cell to EMPTY. */
+  /**
+   * Set every listed cell to EMPTY. Obstacles are skipped: nothing in the game
+   * may remove one, and enforcing that here means no caller can get it wrong.
+   */
   clearCells(indexes: Iterable<CellIndex>): void {
     for (const i of indexes) {
       if (i < 0 || i >= this.cells.length) throw new RangeError(`Index ${i} out of bounds`);
+      if (this.cells[i] === BLOCKED) continue;
       this.cells[i] = EMPTY;
     }
   }
@@ -180,7 +198,7 @@ export class Board {
       let s = '';
       for (let c = 0; c < this.size; c++) {
         const v = this.cells[this.index(r, c)];
-        s += v === EMPTY ? '.' : String(v);
+        s += v === EMPTY ? '.' : v === BLOCKED ? '#' : String(v);
       }
       out.push(s);
     }

@@ -12,6 +12,9 @@ export interface GameStats {
   maxDepthThisGame: number;
   powerUpsUsed: number;
   milestonesHit: number;
+  /** Grey cubes handed to the tray, and how many of those reached the board. */
+  obstaclesGranted: number;
+  obstaclesPlaced: number;
   /** Depth reached on the most recent placement (-1 = no clear). */
   lastDepth: number;
   cellsCleared: number;
@@ -26,6 +29,8 @@ export function createStats(): GameStats {
     maxDepthThisGame: 0,
     powerUpsUsed: 0,
     milestonesHit: 0,
+    obstaclesGranted: 0,
+    obstaclesPlaced: 0,
     lastDepth: -1,
     cellsCleared: 0,
   };

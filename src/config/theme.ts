@@ -12,6 +12,9 @@ export const THEME = {
     textPrimaryCss: '#E8E6FF',
     backgroundDeepCss: '#07070F',
     danger: 0xff3b3b,
+    /** Obstacle cube — deliberately unlit, so it reads as wall, not as a colour. */
+    blocked: 0x51506b,
+    blockedCss: '#51506B',
   },
 
   /** Five block colours, indexed by ColorId 0–4. */

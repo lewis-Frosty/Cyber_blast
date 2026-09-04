@@ -21,6 +21,7 @@ import { resolveBoard } from '../src/core/cascade';
 import { scoreTurn } from '../src/core/scoring';
 import { createRng, type Rng } from '../src/core/rng';
 import { connectedRegion, powerUpForColour } from '../src/core/powerups';
+import { isObstacle } from '../src/core/Piece';
 import type { Board } from '../src/core/Board';
 
 declare const process: { argv: string[] };
@@ -52,6 +53,9 @@ function parseArgs(): Options {
   const depth = num(flag('depth') ?? positional[2], GAMEPLAY_CONFIG.MAX_CASCADE_DEPTH);
   const policy = (flag('policy') ?? 'planner') as Policy;
   const cost = num(flag('cost'), GAMEPLAY_CONFIG.POWERUP_CHARGE_COST);
+  const trigger = (flag('trigger') ?? GAMEPLAY_CONFIG.OBSTACLE_TRIGGER) as 'placements' | 'points';
+  const obstacles = flag('obstacles') !== 'off';
+  const every = flag('every');
   SWEEP = args.includes('--sweep');
 
   return {
@@ -63,6 +67,10 @@ function parseArgs(): Options {
       COLOUR_AFFINITY: affinity,
       MAX_CASCADE_DEPTH: depth,
       POWERUP_CHARGE_COST: cost,
+      OBSTACLES_ENABLED: obstacles,
+      OBSTACLE_TRIGGER: trigger,
+      ...(every !== undefined && trigger === 'points' ? { OBSTACLE_EVERY_POINTS: Number(every) } : {}),
+      ...(every !== undefined && trigger === 'placements' ? { OBSTACLE_EVERY_PLACEMENTS: Number(every) } : {}),
     },
   };
 }
@@ -114,6 +122,15 @@ function evaluate(state: GameState, tray: number, row: number, col: number, opts
   const piece = state.tray[tray];
   if (!piece || !state.board.canPlace(piece.shape, row, col)) return null;
   const board = state.board;
+
+  // A grey cube clears nothing ever, so scoring it like a coloured piece would
+  // make the bot dump it anywhere. Judge it on where it does least harm:
+  // against an edge, away from the middle, not splitting open space.
+  if (isObstacle(piece)) {
+    const edge = (v: number) => Math.min(v, board.size - 1 - v);
+    const hugsEdge = 3 - (edge(row) + edge(col));
+    return { tray, row, col, value: hugsEdge * 6, cleared: 0, depth: -1 };
+  }
 
   const placed = board.place(piece.shape, piece.color, row, col);
   const cascade = resolveBoard(board, {
@@ -214,6 +231,7 @@ interface BatchStats {
   score: number;
   clearing: number;
   powerUps: number;
+  obstacles: number;
   deepest: number;
   biggestClear: number;
   depthBuckets: number[];
@@ -228,7 +246,7 @@ function runBatch(opts: Options): BatchStats {
   const clusterBuckets = [0, 0, 0, 0, 0]; // 1-3, 4-6, 7-10, 11-15, 16+
   const st: BatchStats = {
     games: 0, ended: 0, capped: 0, placements: 0, score: 0, clearing: 0,
-    powerUps: 0, deepest: 0, biggestClear: 0,
+    powerUps: 0, obstacles: 0, deepest: 0, biggestClear: 0,
     depthBuckets, clusterBuckets, scores: [], lengths: [], seconds: 0,
   };
 
@@ -278,6 +296,7 @@ function runBatch(opts: Options): BatchStats {
     st.score += state.score;
     st.clearing += state.stats.clearingPlacements;
     st.powerUps += state.stats.powerUpsUsed;
+    st.obstacles += state.stats.obstaclesPlaced;
     if (state.gameOver) st.ended += 1;
     else if (guard >= opts.maxPlacements) st.capped += 1;
     st.scores.push(state.score);
@@ -305,7 +324,10 @@ function printDetail(st: BatchStats, opts: Options): void {
   const big = (st.clusterBuckets[2] ?? 0) + (st.clusterBuckets[3] ?? 0) + (st.clusterBuckets[4] ?? 0);
   console.log('');
   console.log(`CYBER BLAST — simulation  policy=${opts.policy}  games=${opts.games}  (${f(st.seconds)}s)`);
-  console.log(`config  MAX_CASCADE_DEPTH=${opts.config.MAX_CASCADE_DEPTH}  COLOUR_AFFINITY=${opts.config.COLOUR_AFFINITY}  POWERUP_CHARGE_COST=${opts.config.POWERUP_CHARGE_COST}`);
+  console.log(`config  depth=${opts.config.MAX_CASCADE_DEPTH}  affinity=${opts.config.COLOUR_AFFINITY}  charge=${opts.config.POWERUP_CHARGE_COST}`);
+  console.log(
+    `obstacles  ${opts.config.OBSTACLES_ENABLED ? `every ${opts.config.OBSTACLE_TRIGGER === 'points' ? `${opts.config.OBSTACLE_EVERY_POINTS} points` : `${opts.config.OBSTACLE_EVERY_PLACEMENTS} placements`}` : 'off'}`,
+  );
   console.log('─'.repeat(70));
   console.log(`games ended naturally   ${st.ended}/${st.games}  (${f(pct(st.ended, st.games))}%), ${st.capped} hit the ${opts.maxPlacements} cap`);
   console.log(`placements per game     mean ${f(st.placements / st.games)}   median ${median(st.lengths)}`);
@@ -313,6 +335,7 @@ function printDetail(st: BatchStats, opts: Options): void {
   console.log(`score per placement     ${f(st.score / Math.max(1, st.placements))}`);
   console.log(`clearing placements     ${f(pct(st.clearing, st.placements))}%`);
   console.log(`power-ups per game      ${f(st.powerUps / st.games)}`);
+  console.log(`grey cubes placed/game  ${f(st.obstacles / st.games)}`);
   console.log('');
   console.log('cascade depth (per clearing placement)');
   console.log(`  0:${st.depthBuckets[0]}  1:${st.depthBuckets[1]}  2:${st.depthBuckets[2]}  3:${st.depthBuckets[3]}  4+:${st.depthBuckets[4]}`);

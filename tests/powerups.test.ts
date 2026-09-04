@@ -17,7 +17,7 @@ import {
 import { GameState } from '../src/core/gameState';
 import { shapeByName } from '../src/core/Piece';
 import { GAMEPLAY_CONFIG } from '../src/config/gameplay';
-import { EMPTY } from '../src/core/types';
+import { BLOCKED, EMPTY } from '../src/core/types';
 
 describe('power-up abilities', () => {
   it('covers every colour except lime, which deliberately has none', () => {
@@ -223,5 +223,57 @@ describe('power-ups in the turn flow', () => {
     expect(g.board.get(4, 4)).toBe(1);
     expect(g.tray.filter(Boolean)).toHaveLength(3);
     expect(g.tray.map((p) => p?.shape.name)).not.toEqual(before);
+  });
+});
+
+describe('obstacles are permanent', () => {
+  it('survives Flush, Nova and every other ability', () => {
+    const b = Board.fromRows([
+      '1111#111',
+      '11111111',
+      '11#11111',
+      '11111111',
+      '11111111',
+      '11111111',
+      '11111111',
+      '11111111',
+    ]);
+    const before = b.blockedCount();
+    expect(before).toBe(2);
+
+    // Flush straight through the obstacle at (0,4).
+    applyPowerUp(b, 'flush', 0, 4);
+    expect(b.get(0, 4)).toBe(BLOCKED);
+    // Nova centred on the obstacle at (2,2).
+    applyPowerUp(b, 'nova', 2, 2);
+    expect(b.get(2, 2)).toBe(BLOCKED);
+    expect(b.blockedCount()).toBe(before);
+  });
+
+  it('cannot be plucked, and does not join a neighbouring blob', () => {
+    const b = Board.fromRows([
+      '11#.....',
+      '11......',
+      '........',
+      '........',
+      '........',
+      '........',
+      '........',
+      '........',
+    ]);
+    expect(canApply(b, 'pluck', 0, 2)).toBe(false);
+    expect(connectedRegion(b, 0, 2)).toEqual([]);
+    // The colour-1 blob is four cells and stops at the wall.
+    expect(connectedRegion(b, 0, 0)).toHaveLength(4);
+    applyPowerUp(b, 'pluck', 0, 0);
+    expect(b.get(0, 2)).toBe(BLOCKED);
+    expect(b.filledCount()).toBe(1);
+  });
+
+  it('clearCells refuses to empty an obstacle even if asked directly', () => {
+    const b = Board.fromRows(['#1......', '........', '........', '........', '........', '........', '........', '........']);
+    b.clearCells([b.index(0, 0), b.index(0, 1)]);
+    expect(b.get(0, 0)).toBe(BLOCKED);
+    expect(b.get(0, 1)).toBe(EMPTY);
   });
 });
