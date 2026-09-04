@@ -22,18 +22,18 @@ export const GAMEPLAY_CONFIG = {
   // ── Cascade tuning — the critical knobs ────────────────────────────────
   /**
    * Maximum number of cascade generations after generation 0.
-   * The cascade is a flood fill of ONE colour, so the depth cap is what stops a
-   * big cluster paying out in full.
    *
-   * Tuned in Step 8 by sweeping 5 depths x 4 affinities, 1000 games at the
-   * finalists. At 3 a typical game runs 129 placements (mean 185) and 89% of
-   * games reach a game over. Raising it to 6 pushed length to 430 and dropped
-   * the end rate to 22%: the game stopped being able to kill a competent
-   * player. Dropping it to 2 shortens games further but caps the chain at a
-   * single extra ring, which risks making the differentiating mechanic
-   * invisible (§3.1's "too stingy" failure).
+   * Set to 64 — the cell count of an 8x8 board — so it can never bite: a
+   * connected region cannot be longer than the board, so the whole blob always
+   * detonates. A partially-eaten cluster reads as a bug to a player, and it is
+   * indefensible to leave a visual lie in place for balance reasons.
+   *
+   * This retires the depth cap as a difficulty lever. Difficulty now comes from
+   * POWERUP_CHARGE_COST and COLOUR_AFFINITY. The truncation logic stays in the
+   * resolver, tested, because Phase 4 content variants (larger boards) may want
+   * it back.
    */
-  MAX_CASCADE_DEPTH: 3,
+  MAX_CASCADE_DEPTH: 64,
   /** 'orthogonal' = 4-way propagation. 'diagonal' = 8-way (much longer chains). */
   NEIGHBOUR_MODE: 'orthogonal' as NeighbourMode,
 
@@ -51,6 +51,16 @@ export const GAMEPLAY_CONFIG = {
    */
   COLOUR_AFFINITY: 0.0,
 
+  /**
+   * Per-colour score multiplier, integers so scoring stays exact (rule 3).
+   *
+   * Lime (2) pays double because it is the one colour that charges no power-up.
+   * Without this it was strictly the worst colour to clear, which made building
+   * lime clusters a pure waste — now it is the greed option: no tool, more
+   * points.
+   */
+  COLOUR_SCORE_MULTIPLIER: [1, 1, 2, 1, 1] as readonly number[],
+
   // ── Scoring ────────────────────────────────────────────────────────────
   /** Generation N cells score POINTS_PER_CELL_BASE × (N + 1) each. */
   POINTS_PER_CELL_BASE: 10,
@@ -65,12 +75,21 @@ export const GAMEPLAY_CONFIG = {
    * Charging is per colour, so the colour you keep detonating is the tool you
    * keep earning — the cluster you build decides which ability you get.
    *
-   * Raised 24 -> 36 after playtesting: meters refilled fast enough that a
-   * player who was nearly out of moves could always buy their way out, so the
-   * board never actually closed in. Power-ups should be an escape you ration,
-   * not a renewable one.
+   * Raised 24 -> 36 after playtest round 1: meters refilled fast enough that a
+   * player nearly out of moves could always buy their way out, so the board
+   * never actually closed in.
+   *
+   * Raised 36 -> 72 in round 2, to pay for uncapping the cascade. Letting a
+   * whole blob detonate handed a lot of board back, and measured at 600 games
+   * it undid the difficulty gain: games reaching a game over fell 93.9% -> 72.7%
+   * and the median game tripled. Charge cost is now the lever carrying that
+   * load, and it is the right one — both rounds of playtest feedback said
+   * power-ups were too available.
+   *   cost 36: 75.0% of games end, median 202 placements, 6.0 power-ups/game
+   *   cost 54: 82.3%, median 89, 4.1/game
+   *   cost 72: 89.0%, median 56, 2.7/game   <- chosen
    */
-  POWERUP_CHARGE_COST: 36,
+  POWERUP_CHARGE_COST: 72,
   /** Every this many points, every meter tops up by POWERUP_MILESTONE_BONUS. */
   POWERUP_SCORE_MILESTONE: 2000,
   POWERUP_MILESTONE_BONUS: 8,

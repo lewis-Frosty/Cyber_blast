@@ -117,6 +117,42 @@ describe('GameState turn flow', () => {
     expect(g.board.colourCounts(GAMEPLAY_CONFIG.PALETTE_SIZE)[2]).toBe(2);
   });
 
+  it('detonates an entire connected blob with no depth truncation', () => {
+    const g = new GameState({ seed: 1 });
+    // A snake of colour 4 far longer than the old depth cap of 3, hanging off a
+    // row that needs one more cell.
+    for (let c = 0; c < 7; c++) g.board.set(7, c, c === 0 ? 4 : 1);
+    // Tail up column 0, leaving row 0 empty so the column is NOT itself a full
+    // line — otherwise the whole tail would be generation 0 and prove nothing.
+    for (let r = 1; r <= 6; r++) g.board.set(r, 0, 4);
+    g.setTrayPiece(0, { shape: shapeByName('1x1'), color: 4 });
+
+    const r = g.placePiece(0, 7, 7);
+    expect(r).not.toBeNull();
+    // gen0 = (7,0) and the placed (7,7); the chain then walks all six tail cells.
+    expect(r!.cascade.cleared.size).toBe(8);
+    expect(r!.cascade.maxGeneration).toBe(6);
+    expect(r!.cascade.truncated).toBe(false);
+    // Nothing of that colour is left standing anywhere.
+    expect(g.board.colourCounts(GAMEPLAY_CONFIG.PALETTE_SIZE)[4]).toBe(0);
+  });
+
+  it('pays double for lime and normal rate for other colours', () => {
+    const lime = new GameState({ seed: 1 });
+    for (let c = 0; c < 7; c++) lime.board.set(7, c, 2);
+    lime.setTrayPiece(0, { shape: shapeByName('1x1'), color: 2 });
+    const limeTurn = lime.placePiece(0, 7, 7);
+    // 8 lime cells at generation 0: 8 x 10 x 2, plus 1 for the placement.
+    expect(limeTurn!.score.clears).toBe(160);
+    expect(limeTurn!.score.total).toBe(161);
+
+    const cyan = new GameState({ seed: 1 });
+    for (let c = 0; c < 7; c++) cyan.board.set(7, c, 0);
+    cyan.setTrayPiece(0, { shape: shapeByName('1x1'), color: 0 });
+    const cyanTurn = cyan.placePiece(0, 7, 7);
+    expect(cyanTurn!.score.clears).toBe(80);
+  });
+
   it('detects game over when no remaining tray piece fits', () => {
     const g = new GameState({ seed: 1 });
     // Fill the board, then punch two isolated holes into every row and column

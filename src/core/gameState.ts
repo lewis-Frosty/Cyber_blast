@@ -1,12 +1,13 @@
 import { Board } from './Board';
 import { resolveBoard, type CascadeResult, type Generation0 } from './cascade';
 import { spawnPiece, SHAPES, type Piece, type Shape } from './Piece';
-import { scoreTurn, type ScoreBreakdown } from './scoring';
+import { colourMultiplier, scoreTurn, type ScoreBreakdown } from './scoring';
 import { createRng, type Rng } from './rng';
 import { createStats, recordPlacement, type GameStats } from './stats';
 import {
   addCharge,
   colourHasPowerUp,
+  connectedRegion,
   powerUpForColourOrNull,
   addChargeAll,
   applyPowerUp,
@@ -15,6 +16,7 @@ import {
   isReady,
   spendCharge,
   type PowerUpEffect,
+  type PowerUpId,
   type PowerUpMeters,
 } from './powerups';
 import { GAMEPLAY_CONFIG, type GameplayConfig } from '../config/gameplay';
@@ -160,9 +162,16 @@ export class GameState {
     if (!def || !canApply(this.board, def.id, row, col)) return null;
 
     spendCharge(this.meters, colour);
+    // Read colours before applyPowerUp empties the cells.
+    const clearedColours = canApply(this.board, def.id, row, col)
+      ? collectColours(this.board, def.id, row, col)
+      : [];
     const effect = applyPowerUp(this.board, def.id, row, col);
 
-    const scoreGained = effect.cleared.length * this.config.POINTS_PER_CELL_POWERUP;
+    let scoreGained = 0;
+    for (const c of clearedColours) {
+      scoreGained += this.config.POINTS_PER_CELL_POWERUP * colourMultiplier(c, this.config);
+    }
     this.score += scoreGained;
     this.stats.totalScore += scoreGained;
     this.stats.cellsCleared += effect.cleared.length;
@@ -219,9 +228,11 @@ export class GameState {
       }
     }
 
-    this.board.clearCells(cascade.cleared.keys());
+    // Score before wiping: scoreTurn needs each cleared cell's colour for the
+    // per-colour multiplier, and those cells are about to become EMPTY.
+    const score = scoreTurn(placedCells.length, cascade, this.config, (i) => this.board.getAt(i));
 
-    const score = scoreTurn(placedCells.length, cascade, this.config);
+    this.board.clearCells(cascade.cleared.keys());
     this.score += score.total;
     recordPlacement(this.stats, cascade.maxGeneration, cascade.cleared.size, score.total);
     this.applyMilestones();
@@ -249,4 +260,30 @@ export class GameState {
       gameOver: this.gameOver,
     };
   }
+}
+
+/**
+ * Colours the ability is about to remove, read while the board still holds
+ * them. Mirrors applyPowerUp's own targeting so the two cannot drift.
+ */
+function collectColours(board: Board, id: PowerUpId, row: number, col: number): ColorId[] {
+  const out: ColorId[] = [];
+  const take = (r: number, c: number): void => {
+    if (board.inBounds(r, c) && board.isFilled(r, c)) out.push(board.get(r, c));
+  };
+  switch (id) {
+    case 'flush':
+      for (let c = 0; c < board.size; c++) take(row, c);
+      for (let r = 0; r < board.size; r++) if (r !== row) take(r, col);
+      break;
+    case 'nova':
+      for (let r = row - 1; r <= row + 1; r++) for (let c = col - 1; c <= col + 1; c++) take(r, c);
+      break;
+    case 'pluck':
+      for (const i of connectedRegion(board, row, col)) out.push(board.getAt(i));
+      break;
+    case 'reroll':
+      break;
+  }
+  return out;
 }

@@ -136,7 +136,9 @@ export class HelpScene extends Phaser.Scene {
 
     const close = (): void => {
       markHelpSeen();
-      this.scene.resume('Game');
+      // Opened from the game-over screen the Game scene was never paused, and
+      // resuming it there would restart play behind the overlay.
+      if (this.scene.isPaused('Game')) this.scene.resume('Game');
       this.scene.stop();
     };
     btn.on('pointerdown', close);
