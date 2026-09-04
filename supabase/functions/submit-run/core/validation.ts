@@ -31,18 +31,32 @@ export interface RunRecord {
   move_limit: number | null;
 }
 
-/** What the client claims it achieved. Every field is untrusted. */
+/**
+ * What the client submits. Every field is untrusted.
+ *
+ * The move log is REQUIRED and is the only thing that determines the score:
+ * the server replays it against the run's own seed and takes its own number.
+ * There is deliberately no way to submit a score — a client that could name
+ * its own score would make every check above the replay a formality, since a
+ * patient attacker can pick a value that satisfies all of them.
+ */
 export interface SubmitClaim {
   runId: string;
-  score: number;
-  placements: number;
-  maxCascade: number;
-  /** Ordered action list. When present the score is recomputed, not trusted. */
-  moveLog?: GameAction[];
+  /** Ordered action list. The score is computed from this, never sent. */
+  moveLog: GameAction[];
+  /**
+   * The client's own tally, for diagnostics only. It never becomes the score.
+   * When present it must agree with the replay: a client whose engine disagrees
+   * with the server's is out of sync, and its runs must not reach a leaderboard
+   * that the server's numbers rank.
+   */
+  selfReport?: { score: number; placements: number; maxCascade: number };
 }
 
 export interface ValidationLimits {
   maxScorePerPlacement: number;
+  /** Hard cap on actions accepted for replay — replay is CPU work. */
+  maxMoveLogLength: number;
   minMsPerPlacement: number;
   maxPlausiblePlacements: number;
   maxCascadeDepth: number;
@@ -75,10 +89,21 @@ export type RejectCode =
   | 'daily_once'
   | 'rate_limit'
   | 'move_limit'
+  | 'no_move_log'
+  | 'move_log_size'
   | 'replay_mismatch';
 
 export type ValidationResult =
-  | { ok: true; durationMs: number; verified: boolean; score: number }
+  | {
+      ok: true;
+      durationMs: number;
+      /** Always true: nothing reaches this branch without a verified replay. */
+      verified: true;
+      /** The SERVER's score, computed from the move log. */
+      score: number;
+      placements: number;
+      maxCascade: number;
+    }
   | { ok: false; code: RejectCode; reason: string };
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -102,6 +127,10 @@ export function deriveLimits(config: GameplayConfig = GAMEPLAY_CONFIG): Validati
     maxScorePerPlacement: cells * maxCellPoints + maxPieceCells * config.POINTS_PER_CELL_PLACED,
     minMsPerPlacement: 250,
     maxPlausiblePlacements: 5000,
+    // Every placement can be accompanied by a power-up, so allow twice the
+    // placement bound and no more: replaying an unbounded log is a cheap way
+    // to burn Edge Function CPU.
+    maxMoveLogLength: 5000 * 2,
     maxCascadeDepth: maxGeneration,
     freshnessMs: 2 * HOUR_MS,
     maxSubmissionsPerHour: 20,
@@ -133,72 +162,84 @@ export function validateSubmission(
   // 2. STATE — also blocks replaying an already-submitted runId.
   if (run.status !== 'active') return reject('state', `run is ${run.status}, not active`);
 
-  // 3. TYPES — catches negative, fractional, NaN, Infinity and MAX_SAFE_INTEGER+1.
-  if (!isNonNegativeInt(claim.score)) return reject('types', 'score must be a non-negative integer');
-  if (!isNonNegativeInt(claim.placements)) return reject('types', 'placements must be a non-negative integer');
-  if (!isNonNegativeInt(claim.maxCascade)) return reject('types', 'maxCascade must be a non-negative integer');
+  // 3. MOVE LOG PRESENT. Without it there is nothing to verify, and every
+  // check below is a bound rather than a proof. Refusing here is what makes
+  // the score un-nameable by the client.
+  if (!Array.isArray(claim.moveLog)) return reject('no_move_log', 'a move log is required');
+  if (claim.moveLog.length === 0) return reject('no_move_log', 'move log is empty');
+  if (claim.moveLog.length > limits.maxMoveLogLength) {
+    return reject('move_log_size', 'move log is longer than any real game');
+  }
 
   // 4. FRESHNESS
   const durationMs = ctx.now - run.started_at;
   if (durationMs < 0) return reject('freshness', 'run started in the future');
   if (durationMs >= limits.freshnessMs) return reject('freshness', 'run is older than the session window');
 
-  // 5. CEILING
-  if (claim.score > limits.maxScorePerPlacement * claim.placements) {
-    return reject('ceiling', 'score exceeds the physical maximum for that many placements');
-  }
-
-  // 6. CASCADE
-  if (claim.maxCascade > limits.maxCascadeDepth) {
-    return reject('cascade', 'maxCascade exceeds the deepest chain the board allows');
-  }
-
-  // 7. PACING — a real player cannot drag faster than this for a whole game.
-  if (durationMs < claim.placements * limits.minMsPerPlacement) {
-    return reject('pacing', 'elapsed time is too short for that many placements');
-  }
-
-  // 8. BOARD LIMIT
-  if (claim.placements > limits.maxPlausiblePlacements) {
-    return reject('board_limit', 'placement count is implausible');
-  }
-
-  // 9. DAILY ONCE — belt and braces; a unique index enforces it in the database.
+  // 5. DAILY ONCE — belt and braces; a unique index enforces it in the database.
   if (run.mode === 'daily' && ctx.hasDailyAlready) {
     return reject('daily_once', 'daily challenge already submitted today');
   }
 
-  // 10. RATE LIMIT
+  // 6. RATE LIMIT. Cheap, and it comes before the replay so a flood of
+  // submissions cannot be turned into a flood of replays.
   if (ctx.submissionsLastHour >= limits.maxSubmissionsPerHour) {
     return reject('rate_limit', 'too many submissions in the last hour');
   }
 
-  // 11. MOVE LIMIT — limited mode cannot exceed the moves it was issued.
+  // 7. REPLAY — the authoritative step. Re-runs the log against the server's
+  // own seed and produces the numbers the rest of the chain then bounds.
+  const truth = replay(run.seed, claim.moveLog, { config: ctx.config ?? GAMEPLAY_CONFIG });
+  if (truth.rejected > 0) return reject('replay_mismatch', 'move log contains illegal moves');
+
+  const score = truth.score;
+  const placements = truth.placements;
+  // replay() reports -1 for a game that never cleared a line; the stats counter
+  // reports 0 for the same game. Normalise to the stats convention so the two
+  // are comparable and so the stored value is never negative.
+  const maxCascade = Math.max(0, truth.maxCascade);
+
+  // 8-12. PHYSICS BOUNDS, applied to the DERIVED numbers. These can now only
+  // fail if the engine itself is wrong or the config has drifted, which is
+  // exactly when a score should not be banked.
+  if (score > limits.maxScorePerPlacement * placements) {
+    return reject('ceiling', 'score exceeds the physical maximum for that many placements');
+  }
+  if (maxCascade > limits.maxCascadeDepth) {
+    return reject('cascade', 'maxCascade exceeds the deepest chain the board allows');
+  }
+  if (placements > limits.maxPlausiblePlacements) {
+    return reject('board_limit', 'placement count is implausible');
+  }
+  // A real player cannot drag faster than this for a whole game.
+  if (durationMs < placements * limits.minMsPerPlacement) {
+    return reject('pacing', 'elapsed time is too short for that many placements');
+  }
   if (run.mode === 'limited') {
     if (run.move_limit === null) return reject('move_limit', 'limited run has no move limit');
-    if (claim.placements > run.move_limit) {
-      return reject('move_limit', 'more placements than the run allowed');
+    if (placements > run.move_limit) return reject('move_limit', 'more placements than the run allowed');
+  }
+
+  // 13. SELF-REPORT CROSS-CHECK. Optional, and it cannot change the score —
+  // a disagreement means the client is running a different engine or config,
+  // so its runs must not be ranked against everyone else's.
+  const self = claim.selfReport;
+  if (self) {
+    if (!isNonNegativeInt(self.score) || !isNonNegativeInt(self.placements) || !isNonNegativeInt(self.maxCascade)) {
+      return reject('types', 'self-reported totals must be non-negative integers');
+    }
+    if (self.score !== score) {
+      return reject('replay_mismatch', `client reported ${self.score}, replay produced ${score}`);
+    }
+    if (self.placements !== placements) {
+      return reject('replay_mismatch', 'client placement count does not match the move log');
+    }
+    if (self.maxCascade !== maxCascade) {
+      return reject('replay_mismatch', 'client chain depth does not match the move log');
     }
   }
 
-  // 12. REPLAY — the only check that is actually authoritative. Everything
-  // above is a physics bound; this recomputes the score from the server's own
-  // seed and rejects any disagreement.
-  if (claim.moveLog) {
-    const truth = replay(run.seed, claim.moveLog, { config: ctx.config ?? GAMEPLAY_CONFIG });
-    if (truth.rejected > 0) {
-      return reject('replay_mismatch', 'move log contains illegal moves');
-    }
-    if (truth.score !== claim.score) {
-      return reject('replay_mismatch', `claimed ${claim.score}, replay produced ${truth.score}`);
-    }
-    if (truth.placements !== claim.placements) {
-      return reject('replay_mismatch', 'placement count does not match the move log');
-    }
-    return { ok: true, durationMs, verified: true, score: truth.score };
-  }
-
-  return { ok: true, durationMs, verified: false, score: claim.score };
+  return { ok: true, durationMs, verified: true, score, placements, maxCascade };
 }
 
 /** XP and currency are computed from the verified score — never sent by the client. */

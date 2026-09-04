@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { GAMEPLAY_CONFIG } from '../config/gameplay';
 import { THEME } from '../config/theme';
 import { GameState, type TurnResult } from '../core/gameState';
+import { startRun, type RunSession } from '../backend/runSession';
 import type { Piece } from '../core/Piece';
 import type { CellIndex, ColorId } from '../core/types';
 import { blockTextureKey, createBlock, retextureBlocks, TEXTURE } from '../render/BlockRenderer';
@@ -28,20 +29,14 @@ const PU_BAR_Y = BOARD_TOP + BOARD_PX + 44;
 let sessionBest = 0;
 
 /**
- * The seed this run uses. Fixed to GAMEPLAY_CONFIG.DEFAULT_SEED so playtest
- * sessions are reproducible and bugs repeatable (§2.2.1). Picking a seed is a
- * presentation-layer concern — src/core/ must never read a clock — and in
- * Phase 2 the SERVER supplies this and the client never chooses one.
+ * The seed and run identity for the current game.
+ *
+ * In Phase 2 the SERVER issues both: the client cannot choose a seed, because
+ * the seed is what lets the server replay the move log and derive the score
+ * itself. An offline run still gets a seed so the game is playable, but it
+ * carries no runId and is therefore never ranked.
  */
 let currentSeed: number = GAMEPLAY_CONFIG.DEFAULT_SEED;
-/** Dev-only: cycle a fresh seed each run instead of replaying the fixed one. */
-let randomiseSeed = false;
-
-function nextSeed(): number {
-  if (!randomiseSeed) return GAMEPLAY_CONFIG.DEFAULT_SEED;
-  // Outside src/core/, so a clock read here breaks no rule.
-  return Date.now() >>> 0;
-}
 
 interface Drag {
   trayIndex: number;
@@ -54,6 +49,7 @@ interface Drag {
 
 export class GameScene extends Phaser.Scene {
   private state!: GameState;
+  private session!: RunSession;
   private fx!: EffectsManager;
   private debug!: DebugOverlay;
   private blocks: (Phaser.GameObjects.Image | null)[] = [];
@@ -92,13 +88,13 @@ export class GameScene extends Phaser.Scene {
   // ── Scene lifecycle ────────────────────────────────────────────────────
 
   create(): void {
-    currentSeed = nextSeed();
-    this.state = new GameState({ seed: currentSeed });
     this.blocks = new Array<Phaser.GameObjects.Image | null>(SIZE * SIZE).fill(null);
     this.trayContainers = [];
     this.ghost = [];
     this.drag = null;
-    this.busy = false;
+    // Held until the run exists: without the server's seed there is no game to
+    // play, and any move made before it arrives could not be replayed.
+    this.busy = true;
     this.targeting = null;
     this.targetHighlight = [];
     this.displayedScore = 0;
@@ -108,13 +104,47 @@ export class GameScene extends Phaser.Scene {
     this.drawChrome();
     this.fx = new EffectsManager(this);
     this.fx.addScanlines();
+    this.bindInput();
+    this.debug = new DebugOverlay(this, () => this.state, () => this.time.now - this.startedAt, () => currentSeed);
+
+    void this.beginRun();
+  }
+
+  /**
+   * Open a run, then build the board from the seed it carries.
+   *
+   * startRun() never rejects — it falls back to an offline run — so this
+   * always ends with a playable game.
+   */
+  private async beginRun(): Promise<void> {
+    const waiting = this.add
+      .text(L.canvasWidth / 2, BOARD_TOP + BOARD_PX / 2, 'CONNECTING…', {
+        fontFamily: THEME.fonts.body,
+        fontSize: '16px',
+        fontStyle: '700',
+        color: '#8781b8',
+      })
+      .setOrigin(0.5)
+      .setDepth(40);
+
+    this.session = await startRun('endless');
+    if (!this.scene.isActive()) return;
+    waiting.destroy();
+
+    currentSeed = this.session.handle.seed;
+    this.state = new GameState({ seed: currentSeed });
+
     if (GAMEPLAY_CONFIG.POWERUPS_ENABLED) {
       this.powerBar = new PowerUpBar(this, PU_BAR_Y, BOARD_PX, (colour) => this.onPowerUpTapped(colour));
       this.powerBar.refresh(this, this.state.meters, null);
     }
     this.renderTray(false);
-    this.bindInput();
-    this.debug = new DebugOverlay(this, () => this.state, () => this.time.now - this.startedAt, () => currentSeed);
+    this.startedAt = this.time.now;
+    this.busy = false;
+
+    if (!this.session.rankable) {
+      this.hintText.setText('OFFLINE — THIS RUN WON\'T BE RANKED');
+    }
 
     if (this.state.gameOver) this.endGame();
     else if (!hasSeenHelp()) this.time.delayedCall(420, () => this.openHelp());
@@ -183,14 +213,6 @@ export class GameScene extends Phaser.Scene {
     this.addToggleButton(L.canvasWidth - BOARD_LEFT, 58, () => (renderSettings.glyphMode ? 'GLYPH ●' : 'GLYPH ○'), () => this.toggleGlyphs());
     this.addToggleButton(L.canvasWidth - BOARD_LEFT, 80, () => (renderSettings.soundOn ? 'SND ●' : 'SND ○'), () => this.toggleSound());
     this.addToggleButton(L.canvasWidth - BOARD_LEFT, 102, () => 'DBG', () => this.debug.toggle());
-    this.addToggleButton(
-      L.canvasWidth - BOARD_LEFT,
-      124,
-      () => (randomiseSeed ? 'SEED RND' : 'SEED FIX'),
-      () => {
-        randomiseSeed = !randomiseSeed;
-      },
-    );
     // How-to-play: a big, obvious target, not a tiny toggle.
     const help = this.add
       .text(BOARD_LEFT, 100, '?  HOW TO PLAY', {
@@ -423,6 +445,8 @@ export class GameScene extends Phaser.Scene {
       audio.invalidThunk();
       return;
     }
+    // Power-ups move the score too, so they belong in the log.
+    this.session.recordPowerUp(colour, row, col);
     this.cancelTargeting();
     this.busy = true;
 
@@ -558,6 +582,10 @@ export class GameScene extends Phaser.Scene {
       this.renderTray(false);
       return;
     }
+    // Recorded only once the engine has ACCEPTED the move: the server replays
+    // with the same engine, so a log containing a rejected action is
+    // indistinguishable from a tampered one.
+    this.session.recordPlacement(trayIndex, row, col);
     this.busy = true;
     this.trayContainers[trayIndex]?.destroy();
     this.trayContainers[trayIndex] = null;
@@ -663,6 +691,9 @@ export class GameScene extends Phaser.Scene {
       best: sessionBest,
       placements: this.state.stats.placements,
       maxDepth: this.state.stats.maxDepthThisGame,
+      // The game over screen posts this itself. Nothing here is a score claim:
+      // the session carries the move log, and the server derives the number.
+      session: this.session,
     });
   }
 }

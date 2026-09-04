@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { isoWeekId, mergeEntry, msUntilWeekEnd, sanitiseName, type ScoreEntry } from '../src/leaderboard/types';
 
-const entry = (name: string, score: number, ts = 0): ScoreEntry => ({ name, score, placements: 1, maxChain: 0, ts });
+const entry = (name: string, score: number, ts = 0, id = `${name}:${score}:${ts}`): ScoreEntry => ({
+  id,
+  name,
+  score,
+  placements: 1,
+  maxChain: 0,
+  ts,
+});
 
 describe('weekly bucketing', () => {
   it('formats an ISO week id in UTC', () => {
@@ -45,5 +52,20 @@ describe('score table', () => {
     expect(sanitiseName('')).toBe('ANON');
     expect(sanitiseName('!!!')).toBe('ANON');
     expect(sanitiseName('ABCDEFGHIJKLMNOP')).toHaveLength(12);
+  });
+});
+
+describe('re-posting a run under a new name', () => {
+  it('updates the existing row instead of adding a second one', () => {
+    const rows = mergeEntry([], entry('LEWIS', 900, 1, 'run-a'), 50);
+    const renamed = mergeEntry(rows, entry('FROSTY', 900, 1, 'run-a'), 50);
+    expect(renamed).toHaveLength(1);
+    expect(renamed[0]?.name).toBe('FROSTY');
+  });
+
+  it('still keeps two genuinely different runs', () => {
+    const rows = mergeEntry([], entry('LEWIS', 900, 1, 'run-a'), 50);
+    const both = mergeEntry(rows, entry('LEWIS', 700, 2, 'run-b'), 50);
+    expect(both).toHaveLength(2);
   });
 });

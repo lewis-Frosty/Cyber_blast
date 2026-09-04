@@ -31,3 +31,19 @@ written spec where they conflict. The spec documents are being updated to match.
   Pluck), charged by clearing tiles of that colour. Not in the written spec.
 - **Audio is procedural WebAudio, zero audio files.** The spec's "keep audio
   under 10 files" budget is satisfied by using none.
+
+### The client cannot name a score (Phase 2)
+
+A run is submitted as an ordered move log and nothing else. The server replays
+it against the seed IT issued and takes its own number; `submit-run` has no
+score parameter to send. The client's own tally travels as `selfReport` for
+diagnostics only, and a disagreement rejects the run rather than banking
+either number.
+
+This is the reason rules 1-5 exist. If the core ever stops being pure,
+deterministic, or integer-only, honest players start getting rejected and the
+scheme has to be abandoned — so a change that breaks determinism is not a
+gameplay bug, it is an anti-cheat outage.
+
+Practical consequence: an offline run has no server seed, so it cannot be
+replayed and is never ranked. The game says so rather than pretending to post.

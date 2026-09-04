@@ -5,6 +5,7 @@ import { GameScene } from './scenes/GameScene';
 import { GameOverScene } from './scenes/GameOverScene';
 import { HelpScene } from './scenes/HelpScene';
 import { ensureSession, isBackendConfigured } from './backend/supabase';
+import { flushPendingRuns } from './backend/runSession';
 
 const game = new Phaser.Game({
   type: Phaser.AUTO,
@@ -36,5 +37,8 @@ window.__cyberBlast = game;
 if (isBackendConfigured()) {
   void ensureSession().then((session) => {
     if (session) console.info('[cyber-blast] signed in anonymously as', session.userId);
+    // Runs post themselves at game over, so a run lost to a dropped connection
+    // has no manual retry. Anything queued by a previous session goes now.
+    if (session) void flushPendingRuns();
   });
 }

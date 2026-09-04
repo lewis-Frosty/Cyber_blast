@@ -29,7 +29,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const callerId = userData.user.id;
 
   let claim: {
-    runId?: string; score?: number; placements?: number; maxCascade?: number; moveLog?: GameAction[];
+    runId?: string;
+    moveLog?: GameAction[];
+    selfReport?: { score: number; placements: number; maxCascade: number };
   };
   try {
     claim = await req.json();
@@ -76,10 +78,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
     run,
     {
       runId: claim.runId,
-      score: claim.score as number,
-      placements: claim.placements as number,
-      maxCascade: claim.maxCascade as number,
-      ...(claim.moveLog ? { moveLog: claim.moveLog } : {}),
+      moveLog: claim.moveLog as GameAction[],
+      ...(claim.selfReport ? { selfReport: claim.selfReport } : {}),
     },
     { now: Date.now(), callerId, submissionsLastHour: recent ?? 0, hasDailyAlready },
   );
@@ -93,15 +93,16 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return json({ accepted: false, reason: result.reason, code: result.code }, 422);
   }
 
-  // Score is the SERVER's number — the replayed one when a move log was sent.
-  const score = result.score;
+  // Every number banked below is the SERVER's, derived by replaying the move
+  // log against the seed this server issued. The client sends no score.
+  const { score, placements, maxCascade } = result;
 
   const { data: claimed, error: updateErr } = await db.from('runs').update({
     status: 'submitted',
     submitted_at: new Date().toISOString(),
     score,
-    placements: claim.placements as number,
-    max_cascade: claim.maxCascade as number,
+    placements,
+    max_cascade: maxCascade,
     duration_ms: result.durationMs,
   }).eq('id', run.id).eq('status', 'active').select('id');
   if (updateErr) return json({ accepted: false, reason: 'could not record run' }, 500);
@@ -120,7 +121,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     p_xp: rewards.xp,
     p_currency: rewards.currency,
     p_score: score,
-    p_chain: (claim.maxCascade as number) + 1,
+    p_chain: maxCascade + 1,
   });
   // The run is already banked at this point; a reward failure must be visible
   // rather than silently swallowed, but it does not un-bank the score.

@@ -34,6 +34,9 @@ function readRows(data: Record<string, unknown> | undefined): ScoreEntry[] {
   const raw = data?.['entries'];
   if (!Array.isArray(raw)) return [];
   return raw.filter(isEntry).map((e) => ({
+    // Rows written before ids existed fall back to a per-row synthetic id, so
+    // they still merge sanely instead of colliding on ''.
+    id: typeof e.id === 'string' && e.id ? e.id : `legacy:${String(e.name)}:${String(e.score)}:${String(e.ts ?? 0)}`,
     name: String(e.name).slice(0, 12),
     score: Math.max(0, Math.floor(e.score)),
     placements: Number.isFinite(e.placements) ? Math.floor(e.placements) : 0,

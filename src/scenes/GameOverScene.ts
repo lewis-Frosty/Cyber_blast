@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { THEME } from '../config/theme';
+import { submitRun, type RunSession } from '../backend/runSession';
 import {
   getLeaderboard,
   isoWeekId,
@@ -16,6 +17,8 @@ export interface GameOverData {
   best: number;
   placements: number;
   maxDepth: number;
+  /** Carries the move log. The score is derived from it, never sent. */
+  session: RunSession;
 }
 
 const TOP_ROWS = 8;
@@ -24,12 +27,15 @@ export class GameOverScene extends Phaser.Scene {
   private run!: GameOverData;
   private board: Leaderboard | null = null;
   private week = '';
-  private submitted = false;
+  private runId = '';
   private rowTexts: Phaser.GameObjects.Text[] = [];
   private statusText!: Phaser.GameObjects.Text;
   private noteText!: Phaser.GameObjects.Text;
   private nameInput: Phaser.GameObjects.DOMElement | null = null;
-  private submitBtn: Phaser.GameObjects.Text | null = null;
+  private saveBtn: Phaser.GameObjects.Text | null = null;
+  private postedName = '';
+  /** Resolves once the automatic post has finished, so a rename can't race it. */
+  private posting: Promise<void> | null = null;
   private prompt!: Phaser.GameObjects.Text;
   private acceptRestart = false;
 
@@ -40,7 +46,8 @@ export class GameOverScene extends Phaser.Scene {
   create(data: GameOverData): void {
     this.run = data;
     this.week = isoWeekId();
-    this.submitted = false;
+    // Identifies this run's row so a later name change updates it in place.
+    this.runId = `${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
     this.rowTexts = [];
     this.acceptRestart = false;
 
@@ -106,7 +113,8 @@ export class GameOverScene extends Phaser.Scene {
       this.input.keyboard?.on('keydown-R', () => this.restart());
     });
 
-    void this.loadBoard();
+    this.posting = this.postRun();
+    void this.posting;
   }
 
   // ── Weekly board ───────────────────────────────────────────────────────
@@ -160,14 +168,63 @@ export class GameOverScene extends Phaser.Scene {
     }
   }
 
-  private async loadBoard(): Promise<void> {
+  /**
+   * Post the run automatically.
+   *
+   * There is no confirm step and nothing to type: the score comes from the
+   * game that was just played. The server is authoritative — it replays the
+   * move log and derives the number itself — and the weekly board here is
+   * written in parallel so the game still shows a table offline.
+   */
+  private async postRun(): Promise<void> {
+    this.postedName = sanitiseName(loadPlayerName());
+
     try {
       this.board = await getLeaderboard();
-      const rows = await this.board.top(this.week, TOP_ROWS);
-      this.renderRows(rows);
+      await this.writeLocalRow();
+      this.renderRows(await this.board.top(this.week, TOP_ROWS));
     } catch {
       this.statusText.setText('Leaderboard unavailable');
     }
+
+    const outcome = await submitRun(this.run.session, {
+      score: this.run.score,
+      placements: this.run.placements,
+      maxCascade: this.run.maxDepth,
+    });
+
+    switch (outcome.status) {
+      case 'accepted':
+        this.noteText.setText(`Posted · verified score ${outcome.score}`).setColor('#A8FF3E');
+        break;
+      case 'queued':
+        this.noteText.setText("Saved — we'll post it next time you're online").setColor('#FFB627');
+        break;
+      case 'offline':
+        this.noteText
+          .setText(this.board?.kind === 'shared' ? 'Posted to this board only' : 'Saved to this browser only')
+          .setColor('#8781b8');
+        break;
+      case 'rejected':
+        // Worth showing plainly rather than hiding: if the server refuses an
+        // honest run, that is a bug we need reported, not swallowed.
+        this.noteText.setText(`Not ranked: ${outcome.reason}`).setColor('#FF2E9F');
+        break;
+    }
+  }
+
+  /** Write (or rewrite) this run's row on the local/shared weekly board. */
+  private async writeLocalRow(): Promise<void> {
+    const board = this.board ?? (await getLeaderboard());
+    this.board = board;
+    await board.submit(this.week, {
+      id: this.runId,
+      name: this.postedName,
+      score: this.run.score,
+      placements: this.run.placements,
+      maxChain: this.run.maxDepth,
+      ts: Date.now(),
+    });
   }
 
   private renderRows(rows: readonly ScoreEntry[]): void {
@@ -201,14 +258,14 @@ export class GameOverScene extends Phaser.Scene {
     });
   }
 
-  // ── Name entry ─────────────────────────────────────────────────────────
+  // ── Name (identity only — never a score) ───────────────────────────────
 
   private buildNameEntry(): void {
     const { canvasWidth: w } = THEME.layout;
     const y = 528;
 
     this.add
-      .text(44, y - 22, 'POST YOUR SCORE', {
+      .text(44, y - 22, 'POSTED AS', {
         fontFamily: THEME.fonts.body,
         fontSize: '13px',
         fontStyle: '600',
@@ -228,12 +285,12 @@ export class GameOverScene extends Phaser.Scene {
     if (node instanceof HTMLInputElement) {
       node.addEventListener('keydown', (e) => {
         e.stopPropagation();
-        if (e.key === 'Enter') void this.submit();
+        if (e.key === 'Enter') void this.rename();
       });
     }
 
-    this.submitBtn = this.add
-      .text(w - 44, y + 20, 'POST', {
+    this.saveBtn = this.add
+      .text(w - 44, y + 20, 'SAVE', {
         fontFamily: THEME.fonts.body,
         fontSize: '17px',
         fontStyle: '700',
@@ -247,9 +304,9 @@ export class GameOverScene extends Phaser.Scene {
       .text(44, y + 48, '', { fontFamily: THEME.fonts.body, fontSize: '13px', fontStyle: '600', color: '#8781b8' })
       .setOrigin(0, 0);
 
-    this.submitBtn.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, event: Phaser.Types.Input.EventData) => {
+    this.saveBtn.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, event: Phaser.Types.Input.EventData) => {
       event.stopPropagation();
-      void this.submit();
+      void this.rename();
     });
   }
 
@@ -258,33 +315,27 @@ export class GameOverScene extends Phaser.Scene {
     return node instanceof HTMLInputElement ? node.value : '';
   }
 
-  private async submit(): Promise<void> {
-    if (this.submitted || !this.submitBtn) return;
-    this.submitted = true;
-
+  /**
+   * Change the name this run was posted under. It rewrites the row in place
+   * (matched on the run id) and cannot touch the score — the score belongs to
+   * the game that was played, not to anything typed on this screen.
+   */
+  private async rename(): Promise<void> {
+    // The run posts itself on arrival; renaming before that lands would be
+    // overwritten by it.
+    await this.posting;
     const name = sanitiseName(this.currentName());
+    if (name === this.postedName) return;
+    this.postedName = name;
     savePlayerName(name);
-    this.submitBtn.setText('…').disableInteractive();
+    this.saveBtn?.setText('…').disableInteractive();
 
     try {
-      const board = this.board ?? (await getLeaderboard());
-      this.board = board;
-      await board.submit(this.week, {
-        name,
-        score: this.run.score,
-        placements: this.run.placements,
-        maxChain: this.run.maxDepth,
-        ts: Date.now(),
-      });
-      this.renderRows(await board.top(this.week, TOP_ROWS));
-      this.submitBtn.setText('POSTED').setBackgroundColor('#A8FF3E');
-      this.noteText.setText(
-        board.kind === 'local' ? 'Saved to this browser only — no shared board here' : 'Posted to the shared weekly board',
-      );
+      await this.writeLocalRow();
+      this.renderRows(await (this.board ?? (await getLeaderboard())).top(this.week, TOP_ROWS));
+      this.saveBtn?.setText('SAVED').setBackgroundColor('#A8FF3E');
     } catch {
-      this.submitted = false;
-      this.noteText.setText("Couldn't post — tap RETRY");
-      this.submitBtn.setText('RETRY').setBackgroundColor('#FFB627').setInteractive({ useHandCursor: true });
+      this.saveBtn?.setText('RETRY').setBackgroundColor('#FFB627').setInteractive({ useHandCursor: true });
     }
   }
 

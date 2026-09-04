@@ -1,5 +1,11 @@
 /** One posted run. */
 export interface ScoreEntry {
+  /**
+   * Stable per-run id. Runs post automatically now, so a player who then
+   * changes their name must update the row they already posted rather than
+   * adding a second one for the same game.
+   */
+  id: string;
   /** Player initials / short name, already sanitised and upper-cased. */
   name: string;
   score: number;
@@ -56,7 +62,12 @@ export function sanitiseName(raw: string): string {
   return cleaned.length > 0 ? cleaned : 'ANON';
 }
 
-/** Merge a new entry into a table: best first, capped, one row per run. */
+/**
+ * Merge a new entry into a table: best first, capped, one row per run.
+ * An entry whose id is already present REPLACES it, so re-posting the same run
+ * (after a name change) updates that row instead of duplicating the score.
+ */
 export function mergeEntry(rows: readonly ScoreEntry[], entry: ScoreEntry, max = MAX_TABLE_ROWS): ScoreEntry[] {
-  return [...rows, entry].sort((a, b) => b.score - a.score || a.ts - b.ts).slice(0, max);
+  const without = rows.filter((r) => r.id !== entry.id);
+  return [...without, entry].sort((a, b) => b.score - a.score || a.ts - b.ts).slice(0, max);
 }

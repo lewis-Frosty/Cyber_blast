@@ -33,18 +33,27 @@ not revoked cleanly the advisor will say so.
 
 ## 4. Smoke test
 
-Sanity check that the chain rejects. With a signed-in session in the browser
-console:
+The client no longer sends a score, so the forgery to test is a fabricated
+move log rather than a fabricated number. With a signed-in session in the
+browser console:
 
-    const { data } = await supabase.functions.invoke('start-run', { body: { mode: 'endless' } });
-    // Claim an impossible score for that run:
+    const { data: run } = await supabase.functions.invoke('start-run', { body: { mode: 'endless' } });
+
+    // (a) No move log at all — the submission a cheater would rather send.
+    await supabase.functions.invoke('submit-run', { body: { runId: run.runId } });
+    // expect accepted:false, code 'no_move_log'
+
+    // (b) A log of illegal moves.
     await supabase.functions.invoke('submit-run', {
-      body: { runId: data.runId, score: 9_999_999, placements: 3, maxCascade: 1 },
+      body: { runId: run.runId, moveLog: [{ type: 'place', pieceIndex: 0, gridX: 99, gridY: 99 }] },
     });
+    // expect accepted:false, code 'replay_mismatch'
 
-Expect `accepted: false` with code `ceiling`. Then check the run's status is
-`rejected`, not `active` — a failed submission must not be retryable with
-different numbers.
+Then check the run's status is `rejected`, not `active` — a failed submission
+must not be retryable with different numbers.
+
+Finally play one real game to game over and confirm the note under the board
+reads "Posted · verified score N", with N equal to the score on screen.
 
 ## Known gap
 
