@@ -145,6 +145,31 @@ export const GAMEPLAY_CONFIG = {
   OBSTACLE_EVERY_PLACEMENTS: 100,
   OBSTACLE_EVERY_POINTS: 1500,
 
+  /**
+   * Escalation: once this many obstacles are on the board, the easy filler
+   * shapes stop spawning. Playtesting spotted that walls cut both ways — a
+   * grey cube permanently fills a cell, so the lines it sits in need fewer
+   * coloured placements to complete, which makes clears MORE frequent and
+   * speeds scoring. Since obstacles are earned per point, that compounds.
+   * Removing the small shapes takes back the easy outs at the same moment.
+   *
+   * Measured at 500 games each:
+   *   obstacles off        44.0% of placements clear, mean game 231
+   *   obstacles on         50.3% clear, mean 158, 90.8% of games end
+   *   + limit after 5      47.0% clear, mean 130, 96.6% of games end
+   *
+   * The middle row is the problem the playtest spotted: turning obstacles on
+   * RAISED the clear rate by 6.3 points. The escalation pulls it back toward
+   * baseline and cuts the mean game by 18% while barely moving the median
+   * (106 -> 104), which is the right shape — it kills runaway games without
+   * punishing an ordinary one.
+   *
+   * 0 disables the escalation entirely.
+   */
+  SHAPE_LIMIT_AFTER_OBSTACLES: 5,
+  /** Shapes withdrawn once the threshold is reached. */
+  SHAPE_LIMIT_WITHDRAWN: ['1x1', '1x2', '2x1'] as readonly string[],
+
   // ── Feel ───────────────────────────────────────────────────────────────
   /** Pause between cascade generations so the chain is watchable. */
   CASCADE_STEP_DELAY_MS: 90,

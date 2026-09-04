@@ -56,6 +56,7 @@ function parseArgs(): Options {
   const trigger = (flag('trigger') ?? GAMEPLAY_CONFIG.OBSTACLE_TRIGGER) as 'placements' | 'points';
   const obstacles = flag('obstacles') !== 'off';
   const every = flag('every');
+  const shapeLimit = flag('shapelimit');
   SWEEP = args.includes('--sweep');
 
   return {
@@ -68,6 +69,7 @@ function parseArgs(): Options {
       MAX_CASCADE_DEPTH: depth,
       POWERUP_CHARGE_COST: cost,
       OBSTACLES_ENABLED: obstacles,
+      ...(shapeLimit !== undefined ? { SHAPE_LIMIT_AFTER_OBSTACLES: Number(shapeLimit) } : {}),
       OBSTACLE_TRIGGER: trigger,
       ...(every !== undefined && trigger === 'points' ? { OBSTACLE_EVERY_POINTS: Number(every) } : {}),
       ...(every !== undefined && trigger === 'placements' ? { OBSTACLE_EVERY_PLACEMENTS: Number(every) } : {}),
@@ -336,6 +338,7 @@ function printDetail(st: BatchStats, opts: Options): void {
   console.log(`clearing placements     ${f(pct(st.clearing, st.placements))}%`);
   console.log(`power-ups per game      ${f(st.powerUps / st.games)}`);
   console.log(`grey cubes placed/game  ${f(st.obstacles / st.games)}`);
+  console.log(`shape limit             ${opts.config.SHAPE_LIMIT_AFTER_OBSTACLES > 0 ? `after ${opts.config.SHAPE_LIMIT_AFTER_OBSTACLES} cubes` : 'off'}`);
   console.log('');
   console.log('cascade depth (per clearing placement)');
   console.log(`  0:${st.depthBuckets[0]}  1:${st.depthBuckets[1]}  2:${st.depthBuckets[2]}  3:${st.depthBuckets[3]}  4+:${st.depthBuckets[4]}`);

@@ -89,6 +89,20 @@ export class GameState {
     this.gameOver = this.checkGameOver();
   }
 
+  /**
+   * Shapes currently available. Once enough wall is on the board the easy
+   * filler pieces are withdrawn, so the shrinking board also stops handing out
+   * one-cell escapes.
+   */
+  private availableShapes(): readonly Shape[] {
+    const threshold = this.config.SHAPE_LIMIT_AFTER_OBSTACLES;
+    if (threshold <= 0 || this.board.blockedCount() < threshold) return this.shapes;
+    const withdrawn = new Set(this.config.SHAPE_LIMIT_WITHDRAWN);
+    const remaining = this.shapes.filter((s) => !withdrawn.has(s.name));
+    // Never withdraw everything: an empty pool would make the game unplayable.
+    return remaining.length > 0 ? remaining : this.shapes;
+  }
+
   private spawn(): Piece {
     return spawnPiece(
       this.board,
@@ -98,7 +112,7 @@ export class GameState {
         affinity: this.config.COLOUR_AFFINITY,
         weights: this.config.COLOUR_SPAWN_WEIGHTS,
       },
-      this.shapes,
+      this.availableShapes(),
     );
   }
 

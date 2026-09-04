@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GameState } from '../src/core/gameState';
-import { OBSTACLE_PIECE, shapeByName } from '../src/core/Piece';
+import { OBSTACLE_PIECE, SHAPES, shapeByName } from '../src/core/Piece';
 import { GAMEPLAY_CONFIG } from '../src/config/gameplay';
 import { BLOCKED, EMPTY } from '../src/core/types';
 import { Board } from '../src/core/Board';
@@ -260,6 +260,54 @@ describe('colour affinity (§3)', () => {
     const seen = new Set<number>();
     for (let i = 0; i < 500; i++) seen.add(pickColour(b, rng, { paletteSize: 5, affinity: 1 }));
     expect(seen.size).toBe(5);
+  });
+});
+
+describe('shape-limit escalation', () => {
+  /** Empty the tray, place one piece to force a refill, return the new tray. */
+  function refillUnder(seed: number, config: typeof GAMEPLAY_CONFIG, walls: number) {
+    const g = new GameState({ seed, config });
+    for (let c = 0; c < walls; c++) g.board.set(1, c, BLOCKED);
+    g.setTrayPiece(1, null);
+    g.setTrayPiece(2, null);
+    g.setTrayPiece(0, { shape: shapeByName('1x1'), color: 0 });
+    g.placePiece(0, 7, 7);
+    return g.tray.filter((p) => p !== null && p.color !== BLOCKED).map((p) => p!.shape.name);
+  }
+
+  it('withdraws the filler shapes once enough wall is on the board', () => {
+    const config = { ...GAMEPLAY_CONFIG, SHAPE_LIMIT_AFTER_OBSTACLES: 5 };
+    const withdrawn = config.SHAPE_LIMIT_WITHDRAWN;
+
+    // Below the threshold the filler shapes still appear.
+    const below = new Set<string>();
+    for (let i = 0; i < 150; i++) for (const n of refillUnder(200 + i, config, 4)) below.add(n);
+    expect([...below].some((n) => withdrawn.includes(n))).toBe(true);
+
+    // At and above it they must never appear again.
+    for (let i = 0; i < 150; i++) {
+      for (const n of refillUnder(500 + i, config, 5)) {
+        expect(withdrawn).not.toContain(n);
+      }
+    }
+  });
+
+  it('leaves the pool alone when the escalation is disabled', () => {
+    const config = { ...GAMEPLAY_CONFIG, SHAPE_LIMIT_AFTER_OBSTACLES: 0 };
+    const seen = new Set<string>();
+    for (let i = 0; i < 200; i++) for (const n of refillUnder(900 + i, config, 8)) seen.add(n);
+    // A wall-covered board with no limit still spawns the small shapes.
+    expect([...seen].some((n) => GAMEPLAY_CONFIG.SHAPE_LIMIT_WITHDRAWN.includes(n))).toBe(true);
+  });
+
+  it('never withdraws every shape, even if the list would empty the pool', () => {
+    const config = {
+      ...GAMEPLAY_CONFIG,
+      SHAPE_LIMIT_AFTER_OBSTACLES: 1,
+      SHAPE_LIMIT_WITHDRAWN: SHAPES.map((s) => s.name),
+    };
+    // A pool of nothing would make the game unplayable, so the guard falls back.
+    expect(refillUnder(4242, config, 6).length).toBeGreaterThan(0);
   });
 });
 
