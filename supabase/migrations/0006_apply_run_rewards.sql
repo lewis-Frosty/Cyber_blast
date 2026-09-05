@@ -41,3 +41,11 @@ $$;
 
 revoke all on function public.apply_run_rewards(uuid, integer, integer, integer, integer)
   from public, anon, authenticated;
+
+-- Granted back explicitly rather than relied upon. Supabase's default
+-- privileges do grant EXECUTE to service_role, but a REVOKE ... FROM public
+-- next to it is close enough to that grant that assuming is not worth it: if
+-- service_role lost EXECUTE, every submission would bank its score and then
+-- silently fail to pay out. This statement is idempotent.
+grant execute on function public.apply_run_rewards(uuid, integer, integer, integer, integer)
+  to service_role;
