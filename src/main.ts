@@ -6,6 +6,7 @@ import { GameOverScene } from './scenes/GameOverScene';
 import { HelpScene } from './scenes/HelpScene';
 import { ensureSession, isBackendConfigured } from './backend/supabase';
 import { flushPendingRuns } from './backend/runSession';
+import { smokeTest } from './debug/smokeTest';
 
 const game = new Phaser.Game({
   type: Phaser.AUTO,
@@ -27,10 +28,14 @@ const game = new Phaser.Game({
 // Handy for poking at the running game from devtools / automated smoke tests.
 declare global {
   interface Window {
-    __cyberBlast: Phaser.Game;
+    __cyberBlast: Phaser.Game & { smokeTest: typeof smokeTest };
   }
 }
-window.__cyberBlast = game;
+// The game instance, plus a one-command backend check. Exposed in production
+// deliberately: the deployed site is the only place the Supabase round trip can
+// actually be exercised, and this grants no access the bundle does not already
+// carry — the publishable key is inlined either way and RLS governs everything.
+window.__cyberBlast = Object.assign(game, { smokeTest });
 
 // Sign in silently on first launch (backend spec §1). Fired and forgotten: the
 // game must start and stay playable whether or not this ever resolves.
