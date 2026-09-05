@@ -14,13 +14,15 @@
     "lint:core": "node scripts/check-core-purity.mjs",
     "edge:build": "node scripts/build-edge-shared.mjs",
     "edge:check": "node scripts/build-edge-shared.mjs --check",
-    "pretest": "node scripts/check-core-purity.mjs && node scripts/build-edge-shared.mjs --check"
+    "pretest": "node scripts/check-core-purity.mjs && node scripts/build-edge-shared.mjs --check",
+    "edge:bundle": "node scripts/build-edge-shared.mjs && esbuild supabase/functions/submit-run/index.ts --bundle --format=esm --platform=neutral --target=es2022 --external:'jsr:*' --outfile=supabase/functions/submit-run/dist/index.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.115.0",
     "phaser": "^3.80.1"
   },
   "devDependencies": {
+    "esbuild": "^0.23.1",
     "typescript": "^5.5.4",
     "vite": "^5.4.0",
     "vitest": "^2.0.5"

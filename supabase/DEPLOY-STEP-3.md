@@ -1,48 +1,38 @@
 # Phase 2 Step 3 — pending deploy
 
-## Connecting the Supabase MCP server
+## Status: DEPLOYED
 
-`.mcp.json` in the repo root configures the project-scoped server, so it is
-picked up automatically. Authentication is a separate, interactive step and
-has to happen in a real terminal — not an IDE extension and not a Claude Code
-web session, neither of which can run the OAuth browser flow:
+Applied and deployed on 2026-09-05 against project `iniuyjwgnqlieidvhxtf`:
 
-    claude          # in the repo root
-    /mcp            # select "supabase", then Authenticate
+  migration   phase2_step3_apply_run_rewards
+  start-run   version 1, ACTIVE, verify_jwt true
+  submit-run  version 1, ACTIVE, verify_jwt true
 
-Until that is done, the deploy and advisor steps below cannot be run from a
-Claude session; the SQL editor and the Supabase CLI are the fallback.
+Security advisors return zero lints. `apply_run_rewards` is SECURITY DEFINER
+with EXECUTE revoked from anon and authenticated and granted to service_role,
+confirmed by querying has_function_privilege directly.
 
-The code is committed. Two things still need to run against project
-`iniuyjwgnqlieidvhxtf`, and they must run **in this order** — `submit-run`
-calls `apply_run_rewards`, so deploying it before the migration means every
-submission banks the score but returns `"warning": "rewards not applied"`.
+What is NOT yet verified: neither function has been INVOKED. The build sandbox
+cannot reach *.supabase.co, so the HTTP path — auth header handling, env vars,
+the RPC round trip — is unexercised. The validation chain itself is proven by
+the unit suite and by running the bundled output directly, but that is not the
+same as a live call. Run the smoke test below.
 
-## 1. Apply migration 0006
+## Redeploying
 
-Dashboard → SQL Editor → paste `supabase/migrations/0006_apply_run_rewards.sql`
-→ Run. Or with the CLI linked to the project:
+`submit-run` is deployed as a single bundled file, because it needs the whole
+game engine and the deploy path takes files inline:
 
-    supabase db push
+    npm run edge:bundle    # regenerates supabase/functions/submit-run/dist/index.ts
 
-## 2. Deploy both functions
+The bundle is a build artifact (gitignored). src/core and src/config remain the
+single source of truth, and `npm test` fails if the copies under
+supabase/functions/ have drifted from them.
+
+Deploying via the Supabase CLI instead uses the multi-file tree directly:
 
     supabase functions deploy start-run
     supabase functions deploy submit-run
-
-`submit-run` ships the generated `core/` and `config/` trees alongside
-`index.ts`. Regenerate them first if you have touched anything in `src/core`
-or `src/config`:
-
-    npm run edge:build
-
-`npm test` runs `edge:check`, which fails if the committed copies are stale,
-so a forgotten regeneration cannot reach a deploy unnoticed.
-
-## 3. Re-run the security advisor
-
-Expect zero lints. `apply_run_rewards` is SECURITY DEFINER, so if EXECUTE was
-not revoked cleanly the advisor will say so.
 
 ## 4. Smoke test
 
