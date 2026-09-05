@@ -1,5 +1,18 @@
 # Phase 2 Step 3 — pending deploy
 
+## Connecting the Supabase MCP server
+
+`.mcp.json` in the repo root configures the project-scoped server, so it is
+picked up automatically. Authentication is a separate, interactive step and
+has to happen in a real terminal — not an IDE extension and not a Claude Code
+web session, neither of which can run the OAuth browser flow:
+
+    claude          # in the repo root
+    /mcp            # select "supabase", then Authenticate
+
+Until that is done, the deploy and advisor steps below cannot be run from a
+Claude session; the SQL editor and the Supabase CLI are the fallback.
+
 The code is committed. Two things still need to run against project
 `iniuyjwgnqlieidvhxtf`, and they must run **in this order** — `submit-run`
 calls `apply_run_rewards`, so deploying it before the migration means every
