@@ -25,10 +25,34 @@ function secureSeed(): number {
   return buf[0] % 2_147_483_647;
 }
 
+/**
+ * CORS. The browser sends a preflight OPTIONS request before any POST that
+ * carries an Authorization header, and a function that answers it without
+ * these headers is unreachable from a web page — which is exactly how this
+ * first failed in production, from https://cyber-blast.vercel.app.
+ *
+ * The origin is open because CORS is not what protects this endpoint and never
+ * was: it is a browser-only restriction that curl ignores entirely. The real
+ * gate is `verify_jwt` plus the validation chain. Nor does an open origin leak
+ * anything — these functions authenticate from the Authorization header rather
+ * than cookies, no credentials flag is set, and a hostile page cannot read the
+ * player's token because it lives in localStorage scoped to the game's own
+ * origin. Pinning an allowlist here would break every preview deployment and
+ * local dev server while buying no security.
+ */
+const CORS_HEADERS: Record<string, string> = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Max-Age': '86400',
+};
+
 const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+  new Response(JSON.stringify(body), { status, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } });
 
 Deno.serve(async (req: Request): Promise<Response> => {
+  // Answer the preflight before any auth or body handling.
+  if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
   if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405);
 
   const authHeader = req.headers.get('Authorization') ?? '';
