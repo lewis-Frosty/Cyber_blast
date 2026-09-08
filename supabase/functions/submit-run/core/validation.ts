@@ -103,6 +103,7 @@ export type ValidationResult =
       score: number;
       placements: number;
       maxCascade: number;
+      bestClearStreak: number;
     }
   | { ok: false; code: RejectCode; reason: string };
 
@@ -198,6 +199,7 @@ export function validateSubmission(
   // reports 0 for the same game. Normalise to the stats convention so the two
   // are comparable and so the stored value is never negative.
   const maxCascade = Math.max(0, truth.maxCascade);
+  const bestClearStreak = Math.max(0, truth.bestClearStreak);
 
   // 8-12. PHYSICS BOUNDS, applied to the DERIVED numbers. These can now only
   // fail if the engine itself is wrong or the config has drifted, which is
@@ -239,7 +241,7 @@ export function validateSubmission(
     }
   }
 
-  return { ok: true, durationMs, verified: true, score, placements, maxCascade };
+  return { ok: true, durationMs, verified: true, score, placements, maxCascade, bestClearStreak };
 }
 
 /** XP and currency are computed from the verified score — never sent by the client. */

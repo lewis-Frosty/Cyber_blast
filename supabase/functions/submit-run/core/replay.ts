@@ -50,6 +50,8 @@ export interface ReplayResult {
   finalBoard: readonly Cell[];
   /** Deepest cascade generation reached across the whole run. */
   maxCascade: number;
+  /** Longest run of consecutive placements that each completed a chain. */
+  bestClearStreak: number;
   /** Actions that were rejected as illegal — a legitimate client produces none. */
   rejected: number;
   placements: number;
@@ -106,6 +108,9 @@ export function replay(
     score: state.score,
     finalBoard: state.board.toArray(),
     maxCascade,
+    // Taken from the engine's own counter rather than recomputed here, so the
+    // replayed value and the played value can never drift apart.
+    bestClearStreak: state.stats.bestClearStreak,
     rejected,
     placements,
   };

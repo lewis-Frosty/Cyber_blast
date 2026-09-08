@@ -85,9 +85,8 @@ export const LADDERS: readonly Ladder[] = [
   {
     id: 'streak',
     name: 'Chains in a row',
-    unit: 'consecutive clears',
-    tracked: false,
-    pending: 'Not measured yet — needs a definition first',
+    unit: 'consecutive chains',
+    tracked: true,
     tiers: [
       { at: 3, name: '3 in a row', colour: BRONZE },
       { at: 5, name: '5 in a row', colour: SILVER },

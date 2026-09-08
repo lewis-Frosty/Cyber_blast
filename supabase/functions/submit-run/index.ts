@@ -119,7 +119,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   // Every number banked below is the SERVER's, derived by replaying the move
   // log against the seed this server issued. The client sends no score.
-  const { score, placements, maxCascade } = result;
+  const { score, placements, maxCascade, bestClearStreak } = result;
 
   const { data: claimed, error: updateErr } = await db.from('runs').update({
     status: 'submitted',
@@ -146,6 +146,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
     p_currency: rewards.currency,
     p_score: score,
     p_chain: maxCascade + 1,
+    // The chain streak, like every other banked number, is the server's own —
+    // taken from the replay, never from the client.
+    p_streak: bestClearStreak,
   });
   // The run is already banked at this point; a reward failure must be visible
   // rather than silently swallowed, but it does not un-bank the score.

@@ -14,6 +14,13 @@ export interface GameStats {
   cascadesByDepth: [number, number, number, number, number];
   /** Deepest cascade this game. */
   maxDepthThisGame: number;
+  /**
+   * Placements that completed a chain, back to back, right now. A placement
+   * that clears nothing resets it to zero.
+   */
+  clearStreak: number;
+  /** Longest such run this game. */
+  bestClearStreak: number;
   powerUpsUsed: number;
   milestonesHit: number;
   /** Grey cubes handed to the tray, and how many of those reached the board. */
@@ -31,6 +38,8 @@ export function createStats(): GameStats {
     clearingPlacements: 0,
     cascadesByDepth: [0, 0, 0, 0, 0],
     maxDepthThisGame: 0,
+    clearStreak: 0,
+    bestClearStreak: 0,
     powerUpsUsed: 0,
     milestonesHit: 0,
     obstaclesGranted: 0,
@@ -50,6 +59,13 @@ export function recordPlacement(stats: GameStats, maxGeneration: number, cellsCl
     const bucket = Math.min(maxGeneration, 4) as 0 | 1 | 2 | 3 | 4;
     stats.cascadesByDepth[bucket] += 1;
     if (maxGeneration > stats.maxDepthThisGame) stats.maxDepthThisGame = maxGeneration;
+    // Only PLACEMENTS extend the streak. A power-up clears cells but completes
+    // no chain, and firing one between two chains does not break the run —
+    // the achievement is about chaining placements, not about abstaining.
+    stats.clearStreak += 1;
+    if (stats.clearStreak > stats.bestClearStreak) stats.bestClearStreak = stats.clearStreak;
+  } else {
+    stats.clearStreak = 0;
   }
 }
 

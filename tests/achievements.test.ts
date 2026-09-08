@@ -14,11 +14,12 @@ describe('achievement ladders', () => {
     expect(LADDERS.map((l) => l.id)).toEqual(['league', 'chain', 'daily', 'streak']);
   });
 
-  it('marks the two ladders nothing feeds yet as untracked', () => {
+  it('marks any ladder nothing feeds yet as untracked, with a reason', () => {
     // A dashboard showing "0 / 5" for something nobody counts reports a failure
-    // the player never had the chance to avoid.
+    // the player never had the chance to avoid. Only the daily streak is still
+    // waiting on its system; chains-in-a-row is measured by the engine now.
     const untracked = LADDERS.filter((l) => !l.tracked).map((l) => l.id);
-    expect(untracked).toEqual(['daily', 'streak']);
+    expect(untracked).toEqual(['daily']);
     for (const l of LADDERS.filter((x) => !x.tracked)) {
       expect(l.pending, `${l.id} must explain why it is empty`).toBeTruthy();
     }
