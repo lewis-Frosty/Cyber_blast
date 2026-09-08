@@ -1,6 +1,7 @@
 import type { GameAction } from '../core/replay';
 import { RunSession, type RunMode } from './moveLog';
 import { ensureSession, getSupabase, isBackendConfigured } from './supabase';
+import { invokeFunction, refusal } from './invoke';
 
 /**
  * The run lifecycle as the client sees it — backend spec §4.1/§4.2.
@@ -47,9 +48,10 @@ export async function startRun(mode: RunMode = 'endless'): Promise<RunSession> {
     const session = await ensureSession();
     if (!supabase || !session) return offlineRun();
 
-    const { data, error } = await supabase.functions.invoke('start-run', { body: { mode } });
-    if (error || !data || typeof data.runId !== 'string' || typeof data.seed !== 'number') {
-      console.warn('[cyber-blast] start-run unavailable, playing offline:', error?.message);
+    const res = await invokeFunction(supabase, 'start-run', { mode });
+    const data = res.body as { runId?: string; seed?: number; mode?: string; moveLimit?: number } | null;
+    if (!res.ok || !data || typeof data.runId !== 'string' || typeof data.seed !== 'number') {
+      console.warn('[cyber-blast] start-run unavailable, playing offline:', refusal(res.body).reason ?? res.status);
       return offlineRun();
     }
     return new RunSession({
@@ -116,12 +118,23 @@ async function postSubmission(body: PendingSubmission): Promise<SubmitOutcome> {
   const session = await ensureSession();
   if (!supabase || !session) return { status: 'offline' };
 
-  const { data, error } = await supabase.functions.invoke('submit-run', {
-    body: { runId: body.runId, moveLog: body.moveLog, selfReport: body.selfReport },
+  // Throws only when the request never completed, which is the one case worth
+  // queueing. A refusal comes back as ok:false with the reason in the body.
+  const res = await invokeFunction(supabase, 'submit-run', {
+    runId: body.runId,
+    moveLog: body.moveLog,
+    selfReport: body.selfReport,
   });
-  if (error) throw error;
+
+  if (!res.ok) {
+    const { reason, code } = refusal(res.body);
+    return { status: 'rejected', reason: reason ?? `rejected (${res.status})`, ...(code ? { code } : {}) };
+  }
+
+  const data = res.body as { accepted?: boolean; score?: number; reason?: string; code?: string; rewards?: unknown } | null;
   if (!data || data.accepted !== true) {
-    return { status: 'rejected', reason: String(data?.reason ?? 'rejected'), code: data?.code };
+    const { reason, code } = refusal(res.body);
+    return { status: 'rejected', reason: reason ?? 'rejected', ...(code ? { code } : {}) };
   }
   return {
     status: 'accepted',

@@ -1,4 +1,5 @@
 import { ensureSession, getSupabase, isBackendConfigured } from '../backend/supabase';
+import { invokeFunction, refusal } from '../backend/invoke';
 
 /**
  * One-command backend smoke test, callable from the browser console on any
@@ -51,10 +52,10 @@ export async function smokeTest(): Promise<{ passed: number; failed: number; che
   add('anonymous sign-in', true, `signed in as ${session.userId}`);
 
   // 3. start-run must issue a server-authored seed.
-  const started = await supabase.functions.invoke('start-run', { body: { mode: 'endless' } });
-  const run = started.data as { runId?: string; seed?: number } | null;
-  if (started.error || !run?.runId || typeof run.seed !== 'number') {
-    add('start-run', false, started.error?.message ?? `unexpected response: ${JSON.stringify(started.data)}`);
+  const started = await invokeFunction(supabase, 'start-run', { mode: 'endless' });
+  const run = started.body as { runId?: string; seed?: number } | null;
+  if (!started.ok || !run?.runId || typeof run.seed !== 'number') {
+    add('start-run', false, refusal(started.body).reason ?? `HTTP ${started.status}: ${JSON.stringify(started.body)}`);
     return summarise(checks);
   }
   add('start-run', true, `runId ${run.runId}, server seed ${run.seed}`);
@@ -63,29 +64,33 @@ export async function smokeTest(): Promise<{ passed: number; failed: number; che
   // matters most: it is the submission a cheater would rather send, because
   // without a log there is nothing to verify and every other check is only a
   // bound on a claim rather than a proof.
-  const noLog = await supabase.functions.invoke('submit-run', { body: { runId: run.runId } });
-  const noLogBody = noLog.data as { accepted?: boolean; code?: string } | null;
+  // A refusal arrives as a non-2xx response, so the reason is on the error
+  // body rather than in `data` — reading `data` alone reports a working
+  // rejection as a broken one.
+  const noLog = await invokeFunction(supabase, 'submit-run', { runId: run.runId });
+  const noLogCode = refusal(noLog.body).code;
   add(
     'refuses a submission with no move log',
-    noLogBody?.accepted === false && noLogBody.code === 'no_move_log',
-    `accepted=${String(noLogBody?.accepted)} code=${String(noLogBody?.code)} (want accepted=false, code=no_move_log)`,
+    !noLog.ok && noLogCode === 'no_move_log',
+    `HTTP ${noLog.status}, code ${String(noLogCode)} (want 422 / no_move_log)`,
   );
 
   // 5. And a fabricated log must be refused too. A fresh run is needed: the
   // one above is now marked rejected, which is itself the correct behaviour —
   // a failed submission must never stay active for a second attempt with
   // different numbers.
-  const second = await supabase.functions.invoke('start-run', { body: { mode: 'endless' } });
-  const run2 = second.data as { runId?: string } | null;
-  if (run2?.runId) {
-    const fake = await supabase.functions.invoke('submit-run', {
-      body: { runId: run2.runId, moveLog: [{ type: 'place', pieceIndex: 0, gridX: 99, gridY: 99 }] },
+  const second = await invokeFunction(supabase, 'start-run', { mode: 'endless' });
+  const run2 = second.body as { runId?: string } | null;
+  if (second.ok && run2?.runId) {
+    const fake = await invokeFunction(supabase, 'submit-run', {
+      runId: run2.runId,
+      moveLog: [{ type: 'place', pieceIndex: 0, gridX: 99, gridY: 99 }],
     });
-    const fakeBody = fake.data as { accepted?: boolean; code?: string } | null;
+    const fakeCode = refusal(fake.body).code;
     add(
       'refuses a fabricated move log',
-      fakeBody?.accepted === false && fakeBody.code === 'replay_mismatch',
-      `accepted=${String(fakeBody?.accepted)} code=${String(fakeBody?.code)} (want accepted=false, code=replay_mismatch)`,
+      !fake.ok && fakeCode === 'replay_mismatch',
+      `HTTP ${fake.status}, code ${String(fakeCode)} (want 422 / replay_mismatch)`,
     );
   } else {
     add('refuses a fabricated move log', false, 'could not start a second run to test with');
