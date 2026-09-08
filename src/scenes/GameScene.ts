@@ -3,6 +3,7 @@ import { GAMEPLAY_CONFIG } from '../config/gameplay';
 import { THEME } from '../config/theme';
 import { GameState, type TurnResult } from '../core/gameState';
 import { startRun, type RunSession } from '../backend/runSession';
+import { fetchDailyState, msUntilTomorrow } from '../backend/daily';
 import type { Piece } from '../core/Piece';
 import type { CellIndex, ColorId } from '../core/types';
 import { blockTextureKey, createBlock, retextureBlocks, TEXTURE } from '../render/BlockRenderer';
@@ -62,6 +63,8 @@ interface Drag {
 export class GameScene extends Phaser.Scene {
   private state!: GameState;
   private session!: RunSession;
+  private dailyButton: Phaser.GameObjects.Text | null = null;
+  private dailyPlayed = false;
   private fx!: EffectsManager;
   private debug!: DebugOverlay;
   private blocks: (Phaser.GameObjects.Image | null)[] = [];
@@ -165,12 +168,64 @@ export class GameScene extends Phaser.Scene {
       this.hintText.setText('DAILY CHALLENGE — ONE ATTEMPT');
     }
 
+    void this.refreshDailyButton();
+
     if (this.state.gameOver) this.endGame();
     else if (!hasSeenHelp()) this.time.delayedCall(420, () => this.openHelp());
   }
 
   override update(): void {
     this.debug.update();
+  }
+
+  /** Dim the DAILY button once today's attempt is spent. */
+  private async refreshDailyButton(): Promise<void> {
+    const state = await fetchDailyState();
+    if (!this.scene.isActive()) return;
+    this.dailyPlayed = state.played;
+    if (state.played) this.dailyButton?.setBackgroundColor('#3a3560').setColor('#8781b8');
+  }
+
+  /** A tappable header button sized for a thumb, not a mouse. */
+  private addHeaderButton(
+    x: number,
+    y: number,
+    label: string,
+    colour: string,
+    onTap: () => void,
+  ): Phaser.GameObjects.Text {
+    const t = this.add
+      .text(x, y, label, {
+        fontFamily: THEME.fonts.body,
+        fontSize: '13px',
+        fontStyle: '700',
+        color: '#07070F',
+        backgroundColor: colour,
+        padding: { x: 10, y: 5 },
+      })
+      .setOrigin(1, 0.5)
+      .setDepth(30)
+      .setInteractive({ useHandCursor: true });
+    t.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => {
+      ev.stopPropagation();
+      onTap();
+    });
+    return t;
+  }
+
+  /**
+   * Start today's challenge from the play screen. The server owns the
+   * one-attempt rule; this only avoids offering a run certain to be refused,
+   * and says when the next board opens rather than going quietly dead.
+   */
+  private startDaily(): void {
+    if (this.dailyPlayed) {
+      const hours = Math.max(1, Math.round(msUntilTomorrow() / 3600000));
+      this.hintText.setText(`DAILY DONE — NEXT BOARD IN ${hours}H`);
+      return;
+    }
+    queueDailyRun();
+    this.scene.restart();
   }
 
   private drawChrome(): void {
@@ -228,10 +283,13 @@ export class GameScene extends Phaser.Scene {
       })
       .setOrigin(0, 0.5);
 
-    // Tiny tap targets so toggles work on a phone as well as via keys.
-    this.addToggleButton(L.canvasWidth - BOARD_LEFT, 58, () => (renderSettings.glyphMode ? 'GLYPH ●' : 'GLYPH ○'), () => this.toggleGlyphs());
-    this.addToggleButton(L.canvasWidth - BOARD_LEFT, 80, () => (renderSettings.soundOn ? 'SND ●' : 'SND ○'), () => this.toggleSound());
-    this.addToggleButton(L.canvasWidth - BOARD_LEFT, 102, () => 'DBG', () => this.debug.toggle());
+    // Glyphs and sound moved into the dashboard's settings drawer, which is
+    // where the player asked for them — the play screen should be the game.
+    // What earns a place here is what a player wants BEFORE a run, which they
+    // could previously only reach by losing one first.
+    this.dailyButton = this.addHeaderButton(L.canvasWidth - BOARD_LEFT, 58, 'DAILY', '#FFB627', () => this.startDaily());
+    this.addHeaderButton(L.canvasWidth - BOARD_LEFT, 86, 'PROFILE', '#00F0FF', () => this.scene.launch('Dashboard'));
+    this.addToggleButton(L.canvasWidth - BOARD_LEFT, 110, () => 'DBG', () => this.debug.toggle());
     // How-to-play: a big, obvious target, not a tiny toggle.
     const help = this.add
       .text(BOARD_LEFT, 100, '?  HOW TO PLAY', {
