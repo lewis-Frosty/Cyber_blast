@@ -13,11 +13,33 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
  * player unauthenticated and playing offline rather than stuck on a screen.
  */
 
-const url = import.meta.env['VITE_SUPABASE_URL'] as string | undefined;
-// Publishable (or legacy anon) key only. It is safe in a client bundle: it
-// carries no privileges of its own and every table is governed by RLS. The
-// service_role key must never reach the client — it bypasses RLS entirely.
-const key = import.meta.env['VITE_SUPABASE_PUBLISHABLE_KEY'] as string | undefined;
+/**
+ * Project configuration, with a compiled-in default.
+ *
+ * These are the PUBLIC identifiers for the Cyber Blast project. They are not
+ * secrets under any reading: Vite inlines VITE_* values into the client bundle,
+ * so shipping the game publishes them either way, and reading them out of the
+ * deployed JavaScript is trivial. The publishable key carries no privileges of
+ * its own — every table is governed by row level security and the Edge Function
+ * is the anti-cheat chokepoint. The service_role key is the one that matters,
+ * and it never leaves Edge Function secrets.
+ *
+ * They are compiled in rather than read only from a .env file because hosts do
+ * not agree on dotenv. Vercel, in particular, ignores .env files committed to
+ * the repository and injects variables from its own project settings — so a
+ * deploy built fine, ran fine, and silently played every run offline, which is
+ * the most expensive kind of failure because nothing looks broken.
+ *
+ * An environment variable still wins where one is set, which keeps a staging or
+ * self-hosted project a build-time override away.
+ */
+const DEFAULT_SUPABASE_URL = 'https://iniuyjwgnqlieidvhxtf.supabase.co';
+const DEFAULT_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable__DARbnDT57kgK93iWAsMGQ_FUsLeaGy';
+
+const url = (import.meta.env['VITE_SUPABASE_URL'] as string | undefined) || DEFAULT_SUPABASE_URL;
+const key =
+  (import.meta.env['VITE_SUPABASE_PUBLISHABLE_KEY'] as string | undefined) ||
+  DEFAULT_SUPABASE_PUBLISHABLE_KEY;
 
 export interface Session {
   userId: string;
