@@ -10,7 +10,12 @@
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Rajdhani:wght@500;600&display=swap" rel="stylesheet" />
     <style>
       html, body { margin: 0; padding: 0; background: #07070F; height: 100%; overflow: hidden; }
-      #game { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+      /* Phaser centres the canvas itself (Scale.CENTER_BOTH) and absolutely
+         positions its DOM-element container inside this div. Flex-centring here
+         as well moved that container off the canvas, which is why DOM inputs
+         rendered in the wrong place; `position: relative` gives the container
+         the right box to resolve against. */
+      #game { position: relative; width: 100%; height: 100%; }
       canvas { touch-action: none; }
     </style>
   </head>
