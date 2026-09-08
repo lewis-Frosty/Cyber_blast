@@ -38,6 +38,18 @@ let sessionBest = 0;
  */
 let currentSeed: number = GAMEPLAY_CONFIG.DEFAULT_SEED;
 
+/**
+ * Which mode the NEXT run uses. Module-level because a restart goes through
+ * scene.restart(), which takes no arguments — the mode has to outlive the
+ * scene instance.
+ */
+let nextMode: 'endless' | 'daily' = 'endless';
+
+/** Start the next run as today's Daily Challenge. */
+export function queueDailyRun(): void {
+  nextMode = 'daily';
+}
+
 interface Drag {
   trayIndex: number;
   piece: Piece;
@@ -127,7 +139,12 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(40);
 
-    this.session = await startRun('endless');
+    const mode = nextMode;
+    // One-shot: a restart after the daily returns to endless rather than
+    // silently burning the player's single attempt on a board they cannot
+    // submit again.
+    nextMode = 'endless';
+    this.session = await startRun(mode);
     if (!this.scene.isActive()) return;
     waiting.destroy();
 
@@ -144,6 +161,8 @@ export class GameScene extends Phaser.Scene {
 
     if (!this.session.rankable) {
       this.hintText.setText('OFFLINE — THIS RUN WON\'T BE RANKED');
+    } else if (mode === 'daily') {
+      this.hintText.setText('DAILY CHALLENGE — ONE ATTEMPT');
     }
 
     if (this.state.gameOver) this.endGame();

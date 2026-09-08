@@ -4,6 +4,9 @@ import { submitRun, type RunSession } from '../backend/runSession';
 import { avatarTextureKey, ensureAvatarTextures, resolveAvatarId } from '../render/AvatarArt';
 import { fetchBoard, fetchMyRank, type BoardRow, type BoardScope, type MyRank } from '../backend/leaderboard';
 import { loadProfile, type PlayerProfile } from '../backend/profile';
+import { fetchDailyState, msUntilTomorrow, type DailyState } from '../backend/daily';
+import { shareRun } from '../backend/share';
+import { queueDailyRun } from './GameScene';
 
 export interface GameOverData {
   score: number;
@@ -19,8 +22,9 @@ const L = THEME.layout;
 
 const SCOPES: ReadonlyArray<{ id: BoardScope; label: string }> = [
   { id: 'global', label: 'GLOBAL' },
+  { id: 'daily', label: 'DAILY' },
   { id: 'country', label: 'COUNTRY' },
-  { id: 'weekly', label: 'THIS WEEK' },
+  { id: 'weekly', label: 'WEEK' },
 ];
 
 /**
@@ -41,6 +45,10 @@ export class GameOverScene extends Phaser.Scene {
   private noteText!: Phaser.GameObjects.Text;
   private myRankText!: Phaser.GameObjects.Text;
   private prompt!: Phaser.GameObjects.Text;
+  private daily: DailyState | null = null;
+  private myRank: MyRank | null = null;
+  private dailyButton: Phaser.GameObjects.Text | null = null;
+  private shareButton: Phaser.GameObjects.Text | null = null;
   private acceptRestart = false;
   private boardTop = 250;
 
@@ -107,7 +115,7 @@ export class GameOverScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     this.buildBoardPanel();
-    this.buildProfileButton();
+    this.buildActionButtons();
 
     this.prompt = this.add
       .text(w / 2, h - 40, 'TAP TO PLAY AGAIN', {
@@ -143,7 +151,7 @@ export class GameOverScene extends Phaser.Scene {
       .setStrokeStyle(1, THEME.colours.gridLine);
 
     SCOPES.forEach((s, i) => {
-      const x = 40 + i * 132;
+      const x = 40 + i * 104;
       const t = this.add
         .text(x, top + 14, s.label, {
           fontFamily: THEME.fonts.body,
@@ -181,28 +189,98 @@ export class GameOverScene extends Phaser.Scene {
       .setOrigin(0.5);
   }
 
-  private buildProfileButton(): void {
-    const t = this.add
-      .text(L.canvasWidth / 2, this.boardTop + 320, 'PROFILE  ·  AVATAR  ·  SETTINGS', {
+  private buildActionButtons(): void {
+    const w = L.canvasWidth;
+    const y = this.boardTop + 320;
+
+    this.shareButton = this.add
+      .text(w / 2 - 88, y, 'SHARE', {
         fontFamily: THEME.fonts.body,
         fontSize: '14px',
         fontStyle: '700',
         color: '#07070F',
-        backgroundColor: '#00F0FF',
-        padding: { x: 16, y: 8 },
+        backgroundColor: '#A8FF3E',
+        padding: { x: 14, y: 8 },
       })
       .setOrigin(0.5)
       .setInteractive({ useHandCursor: true });
-    t.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => {
+    this.shareButton.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => {
+      ev.stopPropagation();
+      void this.share();
+    });
+
+    this.dailyButton = this.add
+      .text(w / 2 + 60, y, 'DAILY', {
+        fontFamily: THEME.fonts.body,
+        fontSize: '14px',
+        fontStyle: '700',
+        color: '#07070F',
+        backgroundColor: '#FFB627',
+        padding: { x: 14, y: 8 },
+      })
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true });
+    this.dailyButton.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => {
+      ev.stopPropagation();
+      this.startDaily();
+    });
+
+    const profile = this.add
+      .text(w / 2, y + 40, 'PROFILE · AVATAR · SETTINGS', {
+        fontFamily: THEME.fonts.body,
+        fontSize: '13px',
+        fontStyle: '700',
+        color: '#07070F',
+        backgroundColor: '#00F0FF',
+        padding: { x: 14, y: 7 },
+      })
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true });
+    profile.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => {
       ev.stopPropagation();
       this.scene.launch('Dashboard');
     });
+  }
+
+  /**
+   * Start today's challenge. The server owns the one-attempt rule, so this
+   * only avoids offering a run that is certain to be refused — and says when
+   * the next one opens rather than just going dim.
+   */
+  private startDaily(): void {
+    if (this.daily?.played) {
+      const hours = Math.max(1, Math.round(msUntilTomorrow() / 3600000));
+      this.noteText.setText(`Daily already played — next board in ${hours}h`).setColor('#FFB627');
+      return;
+    }
+    queueDailyRun();
+    this.restartNow();
+  }
+
+  private async share(): Promise<void> {
+    const result = await shareRun({
+      mode: 'endless',
+      score: this.run.score,
+      maxChain: this.run.maxDepth,
+      placements: this.run.placements,
+      rank: this.myRank?.rank ?? null,
+      totalPlayers: this.myRank?.totalPlayers ?? null,
+      url: window.location.origin,
+    });
+    if (!this.scene.isActive()) return;
+    const said =
+      result === 'shared' ? 'Shared' : result === 'copied' ? 'Copied to clipboard' : "Couldn't share";
+    this.noteText.setText(said).setColor(result === 'failed' ? '#FF2E9F' : '#A8FF3E');
   }
 
   // ── Post, then show where it landed ────────────────────────────────────
 
   private async postThenLoad(): Promise<void> {
     this.profile = await loadProfile();
+    this.daily = await fetchDailyState();
+    if (this.scene.isActive() && this.daily.played) {
+      this.dailyButton?.setBackgroundColor('#3a3560').setColor('#8781b8');
+    }
 
     const outcome = await submitRun(this.run.session, {
       score: this.run.score,
@@ -249,6 +327,7 @@ export class GameOverScene extends Phaser.Scene {
     ]);
     if (!this.scene.isActive()) return;
 
+    this.myRank = mine;
     this.renderRows(rows);
     this.renderMyRank(rows, mine);
   }
@@ -325,6 +404,10 @@ export class GameOverScene extends Phaser.Scene {
 
   private restart(): void {
     if (!this.acceptRestart) return;
+    this.restartNow();
+  }
+
+  private restartNow(): void {
     this.acceptRestart = false;
     const game = this.scene.get('Game');
     this.scene.stop();

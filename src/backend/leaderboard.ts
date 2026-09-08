@@ -1,4 +1,5 @@
 import { ensureSession, getSupabase } from './supabase';
+import { todayUtc } from './daily';
 
 /**
  * The real leaderboard, read through the SECURITY DEFINER functions in
@@ -9,7 +10,7 @@ import { ensureSession, getSupabase } from './supabase';
  * server verified.
  */
 
-export type BoardScope = 'global' | 'country' | 'weekly';
+export type BoardScope = 'global' | 'country' | 'weekly' | 'daily';
 
 export interface BoardRow {
   rank: number;
@@ -38,18 +39,24 @@ export function weekStart(now: Date = new Date()): Date {
 }
 
 interface Filters {
+  mode: 'endless' | 'daily';
   since: string | null;
   country: string | null;
+  date: string | null;
 }
 
 function filtersFor(scope: BoardScope, country: string | null): Filters {
   switch (scope) {
     case 'weekly':
-      return { since: weekStart().toISOString(), country: null };
+      return { mode: 'endless', since: weekStart().toISOString(), country: null, date: null };
     case 'country':
-      return { since: null, country };
+      return { mode: 'endless', since: null, country, date: null };
     case 'global':
-      return { since: null, country: null };
+      return { mode: 'endless', since: null, country: null, date: null };
+    case 'daily':
+      // A run's daily identity is its challenge_date, not a time window: the
+      // board must rank today's board, not everything submitted since midnight.
+      return { mode: 'daily', since: null, country: null, date: todayUtc() };
   }
 }
 
@@ -68,14 +75,15 @@ export async function fetchBoard(
   // before the query or every row comes back as someone else's.
   await ensureSession();
 
-  const { since, country: filterCountry } = filtersFor(scope, country);
+  const { mode, since, country: filterCountry, date } = filtersFor(scope, country);
   if (scope === 'country' && !filterCountry) return [];
 
   const { data, error } = await supabase.rpc('get_leaderboard', {
-    p_mode: 'endless',
+    p_mode: mode,
     p_since: since,
     p_country: filterCountry,
     p_limit: limit,
+    p_date: date,
   });
   if (error || !Array.isArray(data)) {
     console.warn('[cyber-blast] leaderboard unavailable:', error?.message);
@@ -101,13 +109,14 @@ export async function fetchMyRank(scope: BoardScope, country: string | null): Pr
   const session = await ensureSession();
   if (!supabase || !session) return null;
 
-  const { since, country: filterCountry } = filtersFor(scope, country);
+  const { mode, since, country: filterCountry, date } = filtersFor(scope, country);
   if (scope === 'country' && !filterCountry) return null;
 
   const { data, error } = await supabase.rpc('get_my_rank', {
-    p_mode: 'endless',
+    p_mode: mode,
     p_since: since,
     p_country: filterCountry,
+    p_date: date,
   });
   if (error || !Array.isArray(data) || data.length === 0) return null;
 
