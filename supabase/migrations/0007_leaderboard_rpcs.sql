@@ -115,3 +115,11 @@ grant execute on function public.get_my_rank(text, timestamptz, char)           
 create index if not exists runs_leaderboard_idx
   on public.runs (mode, status, score desc, submitted_at asc)
   where status = 'submitted';
+
+-- Narrowed after the security advisor flagged it: anonymous sign-in produces
+-- the `authenticated` role with an is_anonymous claim — it does NOT leave the
+-- caller as `anon`. The game therefore never needs `anon` to execute these,
+-- and granting it only exposed two SECURITY DEFINER functions to anyone
+-- holding the publishable key with no session at all.
+revoke execute on function public.get_leaderboard(text, timestamptz, char, integer) from anon;
+revoke execute on function public.get_my_rank(text, timestamptz, char)              from anon;
