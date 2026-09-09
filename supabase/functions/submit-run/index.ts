@@ -8,6 +8,7 @@ import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { computeRewards, validateSubmission, type RunRecord } from './core/validation.ts';
 import type { GameAction } from './core/replay.ts';
+import { configForDate } from './config/dailyChallenges.ts';
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -98,6 +99,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
     hasDailyAlready = (dailies ?? 0) > 0;
   }
 
+  // The day's modifiers are DERIVED from the run's own challenge_date, which
+  // the server issued and stored. Nothing about the twist is taken from the
+  // client, and nothing is read out of daily_challenges.config either — both
+  // ends run the same pure function over the same date, so a player cannot
+  // claim "today was Two Colours" and farm a soft board.
+  const dailyConfig =
+    run.mode === 'daily' && run.challenge_date ? configForDate(run.challenge_date) : undefined;
+
   const result = validateSubmission(
     run,
     {
@@ -105,7 +114,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
       moveLog: claim.moveLog as GameAction[],
       ...(claim.selfReport ? { selfReport: claim.selfReport } : {}),
     },
-    { now: Date.now(), callerId, submissionsLastHour: recent ?? 0, hasDailyAlready },
+    {
+      now: Date.now(),
+      callerId,
+      submissionsLastHour: recent ?? 0,
+      hasDailyAlready,
+      ...(dailyConfig ? { config: dailyConfig } : {}),
+    },
   );
 
   if (!result.ok) {

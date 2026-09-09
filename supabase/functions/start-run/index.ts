@@ -137,6 +137,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
     mode: run.mode,
     moveLimit: run.move_limit,
     startedAt: run.started_at,
+    // The date the SERVER stamped on this run. The client must use this and
+    // not its own clock to pick the day's modifiers: a run started at
+    // 23:59:59 UTC would otherwise be played under tomorrow's twist and
+    // replayed under today's, rejecting every such run as replay_mismatch.
+    challengeDate,
     config,
   });
 });

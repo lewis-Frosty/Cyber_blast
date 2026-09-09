@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { GAMEPLAY_CONFIG } from '../config/gameplay';
+import { challengeForDate, configForDate } from '../config/dailyChallenges';
 import { THEME } from '../config/theme';
 import { GameState, type TurnResult } from '../core/gameState';
 import { startRun, type RunSession } from '../backend/runSession';
@@ -21,7 +22,6 @@ const PITCH = L.cellSize + L.cellGap;
 const BOARD_PX = SIZE * L.cellSize + (SIZE - 1) * L.cellGap;
 const BOARD_LEFT = Math.floor((L.canvasWidth - BOARD_PX) / 2);
 const BOARD_TOP = L.boardTop;
-const TRAY_SLOT_W = L.canvasWidth / GAMEPLAY_CONFIG.TRAY_SIZE;
 const TRAY_CENTRE_Y = L.trayTop + 90;
 /** Power-up bar sits between the board and the tray. */
 const PU_BAR_Y = BOARD_TOP + BOARD_PX + 44;
@@ -80,6 +80,12 @@ export class GameScene extends Phaser.Scene {
   private targetHighlight: Phaser.GameObjects.Rectangle[] = [];
   private displayedScore = 0;
   private startedAt = 0;
+  /**
+   * Bumped on every create(). An in-flight beginRun() whose generation no
+   * longer matches has been superseded by a restart and must not touch the
+   * scene — see the guard after `await startRun`.
+   */
+  private runGeneration = 0;
 
   constructor() {
     super('Game');
@@ -96,8 +102,28 @@ export class GameScene extends Phaser.Scene {
     return this.cellCentre(row, col);
   }
 
+  /**
+   * Tray slots divide the width by THIS RUN's tray size. It used to be a
+   * module constant, which was fine while every game had three slots — the
+   * daily rotation has days of two and four, and a stale divisor would draw
+   * pieces where they cannot be tapped.
+   */
   private traySlotCentre(i: number): { x: number; y: number } {
-    return { x: TRAY_SLOT_W * (i + 0.5), y: TRAY_CENTRE_Y };
+    return { x: (L.canvasWidth / this.traySlots()) * (i + 0.5), y: TRAY_CENTRE_Y };
+  }
+
+  private traySlots(): number {
+    return Math.max(1, this.state.config.TRAY_SIZE);
+  }
+
+  /**
+   * L.trayScale was picked so the widest piece fits one of THREE slots. A
+   * four-slot day gets narrower slots, and at the default scale a 1x5 piece
+   * runs off the edge of the screen. Shrink to fit; never grow, because a
+   * two-slot day has spare width but no spare height.
+   */
+  private trayScale(): number {
+    return Math.min(L.trayScale, (L.trayScale * 3) / this.traySlots());
   }
 
   // ── Scene lifecycle ────────────────────────────────────────────────────
@@ -122,7 +148,11 @@ export class GameScene extends Phaser.Scene {
     this.bindInput();
     this.debug = new DebugOverlay(this, () => this.state, () => this.time.now - this.startedAt, () => currentSeed);
 
-    void this.beginRun();
+    // The DAILY button exists from here on, but the run is still connecting.
+    // A tap restarts the scene while beginRun() is mid-await, so each attempt
+    // carries a generation and a stale one must not finish. See beginRun().
+    this.runGeneration += 1;
+    void this.beginRun(this.runGeneration);
   }
 
   /**
@@ -131,7 +161,7 @@ export class GameScene extends Phaser.Scene {
    * startRun() never rejects — it falls back to an offline run — so this
    * always ends with a playable game.
    */
-  private async beginRun(): Promise<void> {
+  private async beginRun(generation: number): Promise<void> {
     const waiting = this.add
       .text(L.canvasWidth / 2, BOARD_TOP + BOARD_PX / 2, 'CONNECTING…', {
         fontFamily: THEME.fonts.body,
@@ -148,14 +178,31 @@ export class GameScene extends Phaser.Scene {
     // submit again.
     nextMode = 'endless';
     this.session = await startRun(mode);
-    if (!this.scene.isActive()) return;
+    // `scene.isActive()` is not enough: a restart makes the scene active
+    // again, so a stale attempt would sail past that check and overwrite the
+    // new run's board with its own config. That went unnoticed while every
+    // run used identical settings; with the daily rotation it would build a
+    // daily board under endless rules, and the server — which replays under
+    // the day's rules — would reject the run and burn the one attempt.
+    if (!this.scene.isActive() || generation !== this.runGeneration) return;
     waiting.destroy();
 
     currentSeed = this.session.handle.seed;
-    this.state = new GameState({ seed: currentSeed });
+    // A daily plays under the day's twist. The date comes from the server's
+    // response, never from the local clock: the server replays this run under
+    // the date it stamped, and a disagreement rejects the run outright.
+    const challengeDate = this.session.handle.challengeDate;
+    const config = mode === 'daily' && challengeDate ? configForDate(challengeDate) : GAMEPLAY_CONFIG;
+    this.state = new GameState({ seed: currentSeed, config });
 
-    if (GAMEPLAY_CONFIG.POWERUPS_ENABLED) {
-      this.powerBar = new PowerUpBar(this, PU_BAR_Y, BOARD_PX, (colour) => this.onPowerUpTapped(colour));
+    if (this.state.config.POWERUPS_ENABLED) {
+      this.powerBar = new PowerUpBar(
+        this,
+        PU_BAR_Y,
+        BOARD_PX,
+        (colour) => this.onPowerUpTapped(colour),
+        this.state.config.PALETTE_SIZE,
+      );
       this.powerBar.refresh(this, this.state.meters, null);
     }
     this.renderTray(false);
@@ -165,7 +212,12 @@ export class GameScene extends Phaser.Scene {
     if (!this.session.rankable) {
       this.hintText.setText('OFFLINE — THIS RUN WON\'T BE RANKED');
     } else if (mode === 'daily') {
-      this.hintText.setText('DAILY CHALLENGE — ONE ATTEMPT');
+      // Name the twist. A modifier the player cannot see reads as a bug in the
+      // game rather than the point of the day.
+      const challenge = challengeDate ? challengeForDate(challengeDate) : null;
+      this.hintText.setText(
+        challenge ? `${challenge.name} — ${challenge.twist}` : 'DAILY CHALLENGE — ONE ATTEMPT',
+      );
     }
 
     void this.refreshDailyButton();
@@ -371,7 +423,7 @@ export class GameScene extends Phaser.Scene {
       }
     }
     this.renderTray(false);
-    if (GAMEPLAY_CONFIG.POWERUPS_ENABLED) this.powerBar.refresh(this, this.state.meters, null);
+    if (this.state.config.POWERUPS_ENABLED) this.powerBar.refresh(this, this.state.meters, null);
   }
 
   // ── Tray ───────────────────────────────────────────────────────────────
@@ -397,8 +449,11 @@ export class GameScene extends Phaser.Scene {
         continue;
       }
       const { x, y } = this.traySlotCentre(i);
-      const container = this.buildPieceContainer(piece, x, y, L.trayScale).setDepth(20);
-      const hitW = Math.max(piece.shape.width * PITCH, 3 * PITCH);
+      const container = this.buildPieceContainer(piece, x, y, this.trayScale()).setDepth(20);
+      // The hit box lives in unscaled container space, so it needs no scaling
+      // — but it must not spill into the neighbouring slot on a four-slot day.
+      const maxHalf = L.canvasWidth / this.traySlots() / this.trayScale();
+      const hitW = Math.min(Math.max(piece.shape.width * PITCH, 3 * PITCH), maxHalf);
       const hitH = Math.max(piece.shape.height * PITCH, 3 * PITCH);
       container.setInteractive(new Phaser.Geom.Rectangle(-hitW / 2, -hitH / 2, hitW, hitH), Phaser.Geom.Rectangle.Contains);
       container.on('pointerdown', (pointer: Phaser.Input.Pointer) => this.startDrag(i, pointer));
@@ -574,7 +629,7 @@ export class GameScene extends Phaser.Scene {
     tray.setAlpha(0.25);
 
     const lift = pointer.wasTouch ? L.touchDragLiftPx : 0;
-    const container = this.buildPieceContainer(piece, pointer.x, pointer.y - lift, L.trayScale).setDepth(60);
+    const container = this.buildPieceContainer(piece, pointer.x, pointer.y - lift, this.trayScale()).setDepth(60);
     this.tweens.add({ targets: container, scale: 1, duration: 90, ease: 'Quad.easeOut' });
     this.drag = { trayIndex, piece, container, lift, anchor: null, valid: false };
     this.updateGhost(pointer);
@@ -645,7 +700,7 @@ export class GameScene extends Phaser.Scene {
       targets: d.container,
       x,
       y,
-      scale: L.trayScale,
+      scale: this.trayScale(),
       duration: 160,
       ease: 'Quad.easeOut',
       onComplete: () => {
@@ -714,7 +769,7 @@ export class GameScene extends Phaser.Scene {
     this.tweenScore(this.state.score);
 
     // 4. Power-up meters, and a callout for anything that just charged.
-    if (GAMEPLAY_CONFIG.POWERUPS_ENABLED) {
+    if (this.state.config.POWERUPS_ENABLED) {
       this.powerBar.refresh(this, this.state.meters, null);
       const charged = result.chargedColours[0];
       if (charged !== undefined) {

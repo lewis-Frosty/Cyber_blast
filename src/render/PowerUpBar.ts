@@ -40,11 +40,18 @@ export class PowerUpBar {
     centreY: number,
     width: number,
     private readonly onTap: (colour: ColorId) => void,
+    /**
+     * Colours in play this run. The daily rotation has days with a palette of
+     * two or three, and a tool whose colour never spawns can never charge —
+     * showing it would be four buttons where two are permanently dead.
+     */
+    paletteSize: number = THEME.blocks.length,
   ) {
-    const btnW = (width - GAP * (POWERUPS.length - 1)) / POWERUPS.length;
+    const tools = POWERUPS.filter((d) => d.colour < paletteSize);
+    const btnW = (width - GAP * (tools.length - 1)) / Math.max(1, tools.length);
     const left = (THEME.layout.canvasWidth - width) / 2;
 
-    POWERUPS.forEach((def, i) => {
+    tools.forEach((def, i) => {
       const x = left + btnW / 2 + i * (btnW + GAP);
       const container = scene.add.container(x, centreY).setDepth(30);
       const css = THEME.blocks[def.colour]?.css ?? '#FFFFFF';

@@ -18,6 +18,13 @@ export interface RunHandle {
   seed: number;
   mode: RunMode;
   moveLimit: number | null;
+  /**
+   * The UTC date the SERVER stamped on a daily run (YYYY-MM-DD), null for any
+   * other mode. The day's modifiers are derived from this, not from the local
+   * clock — a run started at 23:59:59 UTC would otherwise be played under
+   * tomorrow's twist and replayed under today's.
+   */
+  challengeDate: string | null;
 }
 
 export class RunSession {

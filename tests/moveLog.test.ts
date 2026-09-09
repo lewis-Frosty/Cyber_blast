@@ -14,7 +14,7 @@ import { GAMEPLAY_CONFIG } from '../src/config/gameplay';
  * fails here rather than silently rejecting every honest player's score.
  */
 
-const handle = (seed: number) => ({ runId: 'run-1', seed, mode: 'endless' as const, moveLimit: null });
+const handle = (seed: number) => ({ runId: 'run-1', seed, mode: 'endless' as const, moveLimit: null, challengeDate: null });
 
 /** Play a game, recording through RunSession the way the scene does. */
 function playAndRecord(seed: number, chooserSeed: number, maxMoves: number) {

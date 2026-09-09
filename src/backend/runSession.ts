@@ -34,7 +34,7 @@ function offlineRun(): RunSession {
   // anywhere — an offline run is played and discarded. `|| 1` keeps it away
   // from 0, which is a degenerate seed for the PRNG.
   const seed = (Date.now() >>> 0) || 1;
-  return new RunSession({ runId: null, seed, mode: 'endless', moveLimit: null });
+  return new RunSession({ runId: null, seed, mode: 'endless', moveLimit: null, challengeDate: null });
 }
 
 /**
@@ -49,7 +49,9 @@ export async function startRun(mode: RunMode = 'endless'): Promise<RunSession> {
     if (!supabase || !session) return offlineRun();
 
     const res = await invokeFunction(supabase, 'start-run', { mode });
-    const data = res.body as { runId?: string; seed?: number; mode?: string; moveLimit?: number } | null;
+    const data = res.body as {
+      runId?: string; seed?: number; mode?: string; moveLimit?: number; challengeDate?: string;
+    } | null;
     if (!res.ok || !data || typeof data.runId !== 'string' || typeof data.seed !== 'number') {
       console.warn('[cyber-blast] start-run unavailable, playing offline:', refusal(res.body).reason ?? res.status);
       return offlineRun();
@@ -59,6 +61,7 @@ export async function startRun(mode: RunMode = 'endless'): Promise<RunSession> {
       seed: data.seed,
       mode: (data.mode as RunMode) ?? mode,
       moveLimit: typeof data.moveLimit === 'number' ? data.moveLimit : null,
+      challengeDate: typeof data.challengeDate === 'string' ? data.challengeDate : null,
     });
   } catch (e) {
     console.warn('[cyber-blast] could not start a server run, playing offline:', e);

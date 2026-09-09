@@ -46,7 +46,7 @@ export class DebugOverlay {
     const deep = d2 + d3 + d4;
     const deepRate = deep === 0 ? '—' : `1 in ${(st.placements / deep).toFixed(1)}`;
     const clearPct = st.placements === 0 ? 0 : (100 * st.clearingPlacements) / st.placements;
-    const counts = s.board.colourCounts(GAMEPLAY_CONFIG.PALETTE_SIZE);
+    const counts = s.board.colourCounts(s.config.PALETTE_SIZE);
     const colours = counts.map((n, i) => `${THEME.blocks[i]?.name.slice(0, 3) ?? i}:${n}`).join(' ');
     const meters = s.meters.charge
       .map((n, i) => `${THEME.blocks[i]?.name.slice(0, 3) ?? i}:${n >= s.meters.cost ? 'RDY' : n}`)

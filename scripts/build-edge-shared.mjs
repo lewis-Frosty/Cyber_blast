@@ -24,7 +24,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const TARGETS = ['submit-run'];
 
 const CORE = ['validation', 'replay', 'gameState', 'Board', 'Piece', 'cascade', 'scoring', 'stats', 'powerups', 'rng', 'types'];
-const CONFIG = ['gameplay'];
+const CONFIG = ['gameplay', 'dailyChallenges'];
 
 /** `from './X'` -> `from './X.ts'`, leaving package specifiers alone. */
 function addExtensions(source) {

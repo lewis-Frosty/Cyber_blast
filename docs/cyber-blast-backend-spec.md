@@ -413,34 +413,58 @@ enough.
 | 11 | **Lime Fever** | Lime pays ×4 and spawns heavily. Greed day. | `COLOUR_SCORE_MULTIPLIER: [1,1,4,1,1]`, weights `[80,80,160,80,80]` |
 | 12 | **Clean Room** | No obstacles at all. Pure endurance. | `OBSTACLES_ENABLED: false` |
 | 13 | **Sudden Wall** | Filler shapes withdrawn after 1 obstacle, not 5. | `SHAPE_LIMIT_AFTER_OBSTACLES: 1` |
-| 14 | **Shallow** — *HELD, see below* | Chains truncate at depth 3. | `MAX_CASCADE_DEPTH: 3` |
+| 14 | **Slow Burn** | A grey cube every 4000 points. A long, open board. | `OBSTACLE_EVERY_POINTS: 4000` |
 
-**#14 is held pending an explicit decision.** Capping cascade depth directly
-contradicts a locked product decision — uncapped chains are core, and the depth
-cap was deleted for that reason. One day in fourteen is arguably a fair place
-to invert a rule, but inverting *the* rule the game is built on is not a call to
-make quietly. If it is rejected, the substitute is **Slow Burn**
-(`OBSTACLE_EVERY_POINTS: 4000`) — a long, open board that rewards patience,
-using a knob already in the config.
+**Slot 14 shipped as Slow Burn, not Shallow.** The proposed entry was
+**Shallow** (`MAX_CASCADE_DEPTH: 3`), which contradicts a locked product
+decision: uncapped chains are core, and the depth cap was deleted for that
+reason. Inverting *the* rule the game is built on is not a call to make
+quietly, so it was not shipped without an explicit yes. Slow Burn takes the
+slot meanwhile. If Shallow is ever approved it swaps in at that one entry and
+nothing else changes.
 
 **Deliberately excluded:** board-size variants (6×6, 10×10) would be the most
 visually striking of all, but `SIZE` and `BOARD_PX` are module-level constants
 in `GameScene`, so the renderer cannot vary board size per run. That is a
 refactor, not a config value.
 
-**The pipeline this needs, which does not exist yet.** `daily_challenges.config`
-is stored and `start-run` returns it, but *neither end consumes it*: the client
-never reads it, and `submit-run` replays with the default config. Wiring only
-one end would reject every daily run as `replay_mismatch`, because the server
-would replay a different game than the one played. The two must land together:
+**As built: the config is derived, not transported.** The original plan was to
+plumb `daily_challenges.config` from the server to the client and back. That
+was rejected: it would have the server trust a blob it has to schema-check, and
+it puts the same value on two wires where it can diverge.
 
-1. Plumb `config` from `start-run` into the client's `GameState`
-2. Plumb the same config into `submit-run`'s `validateSubmission`
-3. Store the 14 configs and select by `challenge_date`
-4. Show the day's name and twist on the play screen
+Instead both ends run the same pure function over the date:
+`configForDate(challenge_date)` in `src/config/dailyChallenges.ts`. Rotation is
+`days since epoch mod 14`.
 
-Until step 3 lands, every daily is "same seed, standard rules" — which is
-correct and shippable, just not yet distinctive.
+- The **server** derives it from `runs.challenge_date`, which it issued and
+  stored. Nothing about the twist is taken from the client, and nothing is read
+  out of `daily_challenges.config` — so a player cannot claim "today was Two
+  Colours" and farm a soft board.
+- The **client** derives it from the `challengeDate` that `start-run` now
+  returns. It must not use its own clock: a run started at 23:59:59 UTC would
+  otherwise be played under tomorrow's twist and replayed under today's,
+  rejecting every such run.
+- **Drift is structural, not conventional.** The file is copied into the Edge
+  Function tree by `scripts/build-edge-shared.mjs` and `npm run pretest` fails
+  if the copy differs, so played and replayed use identical numbers by
+  construction.
+
+`tests/dailyChallenges.test.ts` plays and replays all fourteen across six seeds
+each and asserts the scores match, with a floor on total placements so a
+challenge whose games all end instantly cannot pass vacuously.
+
+**One real bug this surfaced.** `GameScene.create()` builds the DAILY button
+before `beginRun()` finishes awaiting the server. Tapping it mid-flight
+restarts the scene, and the stale `beginRun()` then resumed and overwrote the
+new run's board — `scene.isActive()` is true again after a restart, so the
+existing guard did not catch it. Harmless while every run used identical
+settings; with the rotation it would build a daily board under endless rules
+and the server would reject the run, burning the player's one attempt. Fixed
+with a generation token on each `create()`.
+
+`daily_challenges.config` is now unused by both ends. It stays in the schema as
+a record and a future per-day override hook.
 
 ### 6.2 Streaks
 ```
@@ -518,9 +542,9 @@ Zero backend cost. No image generation. It is simultaneously a retention hook, a
 
 **Step 7 — Leagues.** Group assignment, points accrual, weekly promotion/relegation job (Supabase scheduled function / pg_cron).
 
-**Step 7b — Daily challenge rotation.** The 14 configs of §6.1a, plus the
-config pipeline both ends need. Not optional polish: without it `config` is
-dead weight in the schema.
+**Step 7b — Daily challenge rotation.** The 14 configs of §6.1a, derived on
+both ends from `challenge_date`. Requires `start-run` and `submit-run` to be
+redeployed together.
 
 **Step 8 — Streaks, quests, cosmetic unlocks.**
 
