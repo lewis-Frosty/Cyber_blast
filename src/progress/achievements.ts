@@ -33,26 +33,30 @@ export interface Ladder {
   pending?: string;
 }
 
-const BRONZE = '#CD7F32';
-const SILVER = '#C0C6D8';
-const GOLD = '#FFB627';
-const PLATINUM = '#00F0FF';
-const DIAMOND = '#A8FF3E';
-const VIOLET = '#B36BFF';
-const MAGENTA = '#FF2E9F';
+// Ladder rung colours. Neon, ascending — a muddy bronze-silver-gold medal
+// ramp was off-theme in a game that looks like this, and the metal NAMES read
+// as league tiers now that the game has real ones (SPARK … SINGULARITY).
+// Rungs are named after what they measure instead, so nothing on the player
+// page can be mistaken for a league standing.
+const RUNG_1 = '#4FC3C7';
+const RUNG_2 = '#00F0FF';
+const RUNG_3 = '#A8FF3E';
+const RUNG_4 = '#FFB627';
+const RUNG_5 = '#B36BFF';
+const RUNG_6 = '#FF2E9F';
 
 export const LADDERS: readonly Ladder[] = [
   {
     id: 'league',
-    name: 'League',
+    name: 'Runs logged',
     unit: 'games played',
     tracked: true,
     tiers: [
-      { at: 1, name: 'Bronze', colour: BRONZE },
-      { at: 10, name: 'Silver', colour: SILVER },
-      { at: 50, name: 'Gold', colour: GOLD },
-      { at: 150, name: 'Platinum', colour: PLATINUM },
-      { at: 400, name: 'Diamond', colour: DIAMOND },
+      { at: 1, name: '1 game', colour: RUNG_1 },
+      { at: 10, name: '10 games', colour: RUNG_2 },
+      { at: 50, name: '50 games', colour: RUNG_3 },
+      { at: 150, name: '150 games', colour: RUNG_4 },
+      { at: 400, name: '400 games', colour: RUNG_6 },
     ],
   },
   {
@@ -61,25 +65,27 @@ export const LADDERS: readonly Ladder[] = [
     unit: 'longest chain',
     tracked: true,
     tiers: [
-      { at: 5, name: '×5', colour: BRONZE },
-      { at: 10, name: '×10', colour: SILVER },
-      { at: 15, name: '×15', colour: GOLD },
-      { at: 20, name: '×20', colour: PLATINUM },
-      { at: 25, name: '×25', colour: VIOLET },
-      { at: 30, name: '×30', colour: DIAMOND },
+      { at: 5, name: '×5', colour: RUNG_1 },
+      { at: 10, name: '×10', colour: RUNG_2 },
+      { at: 15, name: '×15', colour: RUNG_3 },
+      { at: 20, name: '×20', colour: RUNG_4 },
+      { at: 25, name: '×25', colour: RUNG_5 },
+      { at: 30, name: '×30', colour: RUNG_6 },
     ],
   },
   {
     id: 'daily',
     name: 'Daily streak',
-    unit: 'days in a row',
-    tracked: false,
-    pending: 'Starts counting when the Daily Challenge ships',
+    // "best streak", not "days in a row": the STREAK tile above shows the live
+    // number and this ladder shows the high-water mark, so on a page carrying
+    // both, an unqualified label reads as a contradiction.
+    unit: 'best streak',
+    tracked: true,
     tiers: [
-      { at: 5, name: '5 days', colour: BRONZE },
-      { at: 10, name: '10 days', colour: SILVER },
-      { at: 15, name: '15 days', colour: GOLD },
-      { at: 30, name: '30 days', colour: DIAMOND },
+      { at: 5, name: '5 days', colour: RUNG_2 },
+      { at: 10, name: '10 days', colour: RUNG_3 },
+      { at: 15, name: '15 days', colour: RUNG_4 },
+      { at: 30, name: '30 days', colour: RUNG_6 },
     ],
   },
   {
@@ -88,10 +94,10 @@ export const LADDERS: readonly Ladder[] = [
     unit: 'consecutive chains',
     tracked: true,
     tiers: [
-      { at: 3, name: '3 in a row', colour: BRONZE },
-      { at: 5, name: '5 in a row', colour: SILVER },
-      { at: 8, name: '8 in a row', colour: GOLD },
-      { at: 12, name: '12 in a row', colour: MAGENTA },
+      { at: 3, name: '3 in a row', colour: RUNG_1 },
+      { at: 5, name: '5 in a row', colour: RUNG_3 },
+      { at: 8, name: '8 in a row', colour: RUNG_4 },
+      { at: 12, name: '12 in a row', colour: RUNG_6 },
     ],
   },
 ];

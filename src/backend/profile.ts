@@ -23,7 +23,10 @@ export interface PlayerTotalsRow {
   bestScore: number;
   bestChain: number;
   bestClearStreak: number;
+  /** Best streak ever reached. */
   dailyStreak: number;
+  /** The streak running right now — 0 once a day has been missed. */
+  dailyStreakCurrent: number;
   xp: number;
   currency: number;
 }
@@ -168,7 +171,9 @@ export async function loadTotals(): Promise<PlayerTotalsRow | null> {
   const [stats, wallet] = await Promise.all([
     supabase
       .from('player_stats')
-      .select('games_played, best_score, best_chain, best_clear_streak, daily_streak_best')
+      // One string literal: supabase-js infers the row type from it, and a
+      // concatenation defeats that and silently degrades every field to never.
+      .select('games_played, best_score, best_chain, best_clear_streak, daily_streak_best, daily_streak_current, daily_streak_last')
       .eq('user_id', session.userId)
       .maybeSingle(),
     supabase.from('player_wallet').select('xp, currency').eq('user_id', session.userId).maybeSingle(),
@@ -182,9 +187,30 @@ export async function loadTotals(): Promise<PlayerTotalsRow | null> {
     bestChain: Number(s.best_chain ?? 0),
     bestClearStreak: Number(s.best_clear_streak ?? 0),
     dailyStreak: Number(s.daily_streak_best ?? 0),
+    // The stored current streak is only refreshed when the player plays a
+    // daily, so it goes stale the moment they miss a day. Rather than run a
+    // nightly job to zero it, check the date it reaches: a streak that does
+    // not reach yesterday is over.
+    dailyStreakCurrent: streakIsLive(s.daily_streak_last as string | null)
+      ? Number(s.daily_streak_current ?? 0)
+      : 0,
     xp: Number(wallet.data?.xp ?? 0),
     currency: Number(wallet.data?.currency ?? 0),
   };
+}
+
+/**
+ * True if a streak whose last day is `lastIso` is still running: it must reach
+ * today or yesterday. Yesterday still counts — the player has not missed a day
+ * until today ends.
+ */
+export function streakIsLive(lastIso: string | null, today: Date = new Date()): boolean {
+  if (!lastIso) return false;
+  const last = Date.parse(`${lastIso}T00:00:00Z`);
+  if (Number.isNaN(last)) return false;
+  const todayUtcMs = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+  const daysAgo = Math.round((todayUtcMs - last) / 86_400_000);
+  return daysAgo <= 1;
 }
 
 /** The 12 avatars, read from the catalogue the database already seeds. */

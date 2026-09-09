@@ -16,10 +16,10 @@ describe('achievement ladders', () => {
 
   it('marks any ladder nothing feeds yet as untracked, with a reason', () => {
     // A dashboard showing "0 / 5" for something nobody counts reports a failure
-    // the player never had the chance to avoid. Only the daily streak is still
-    // waiting on its system; chains-in-a-row is measured by the engine now.
-    const untracked = LADDERS.filter((l) => !l.tracked).map((l) => l.id);
-    expect(untracked).toEqual(['daily']);
+    // the player never had the chance to avoid. All four are fed now — the
+    // daily streak was the last, and migration 0013 writes it — but the rule
+    // still has to hold for any ladder added later.
+    expect(LADDERS.filter((l) => !l.tracked).map((l) => l.id)).toEqual([]);
     for (const l of LADDERS.filter((x) => !x.tracked)) {
       expect(l.pending, `${l.id} must explain why it is empty`).toBeTruthy();
     }
@@ -53,13 +53,13 @@ describe('achievement ladders', () => {
 
   it('keeps the top tier when the value exceeds it', () => {
     const p = progressFor(LADDERS[0]!, totals({ gamesPlayed: 9999 }));
-    expect(p.earned?.name).toBe('Diamond');
+    expect(p.earned?.name).toBe('400 games');
     expect(p.next).toBeNull();
   });
 
   it('reads the right stat for each ladder', () => {
     const p = allProgress(totals({ gamesPlayed: 12, bestChain: 16, dailyStreak: 6, bestClearStreak: 4 }));
-    expect(p.find((x) => x.ladder.id === 'league')?.earned?.name).toBe('Silver');
+    expect(p.find((x) => x.ladder.id === 'league')?.earned?.name).toBe('10 games');
     expect(p.find((x) => x.ladder.id === 'chain')?.earned?.name).toBe('×15');
     expect(p.find((x) => x.ladder.id === 'daily')?.earned?.name).toBe('5 days');
     expect(p.find((x) => x.ladder.id === 'streak')?.earned?.name).toBe('3 in a row');

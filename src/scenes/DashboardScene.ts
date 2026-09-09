@@ -135,10 +135,12 @@ export class DashboardScene extends Phaser.Scene {
       }),
     );
 
+    // Tappable: a rank with no way to see the board it refers to is a dead
+    // end, and "2 of 2" is exactly the number that makes someone want to look.
     const rank = this.myRank
-      ? `RANK  ${this.myRank.rank} / ${this.myRank.totalPlayers}`
+      ? `RANK  ${this.myRank.rank} / ${this.myRank.totalPlayers}  ›`
       : 'RANK  —  play to enter';
-    this.track(
+    const rankText = this.track(
       this.add.text(230, y + 74, rank, {
         fontFamily: THEME.fonts.body,
         fontSize: '14px',
@@ -146,6 +148,13 @@ export class DashboardScene extends Phaser.Scene {
         color: this.myRank ? '#A8FF3E' : '#615c82',
       }),
     );
+    if (this.myRank) {
+      rankText.setPadding(6, 6).setInteractive({ useHandCursor: true });
+      rankText.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => {
+        ev.stopPropagation();
+        this.openOverlay('Leaderboard');
+      });
+    }
 
     // Avatar picker: 12 in two rows of six.
     this.avatarButtons = [];
@@ -177,7 +186,9 @@ export class DashboardScene extends Phaser.Scene {
       ['BEST', t ? String(t.bestScore) : '—'],
       ['GAMES', t ? String(t.gamesPlayed) : '—'],
       ['BEST CHAIN', t ? `×${t.bestChain}` : '—'],
-      ['XP', t ? String(t.xp) : '—'],
+      // The streak the player is actually being asked to build, in place of an
+      // XP number they cannot spend on anything yet.
+      ['STREAK', t ? `${t.dailyStreakCurrent}` : '—'],
     ];
     const w = (L.canvasWidth - 56) / cells.length;
     cells.forEach(([label, value], i) => {
@@ -385,6 +396,22 @@ export class DashboardScene extends Phaser.Scene {
     t.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => {
       ev.stopPropagation();
       onTap();
+    });
+  }
+
+  /**
+   * Launch a scene on top of this one, hiding the name field while it is up.
+   *
+   * The field is a real DOM input, so it floats above the canvas and every
+   * scene drawn on it — it was showing through the leaderboard's tab row. It
+   * is hidden rather than destroyed so a half-typed name survives the trip.
+   */
+  private openOverlay(key: string): void {
+    this.nameInput?.setVisible(false);
+    this.scene.launch(key);
+    const overlay = this.scene.get(key);
+    overlay.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      if (this.scene.isActive()) this.nameInput?.setVisible(true);
     });
   }
 
