@@ -324,6 +324,57 @@ Every player is always in a race of 30 people they can plausibly win. This is th
 
 **Group assignment:** lazily, on the player's first submission of the season. Fill the newest non-full group at their tier; create a new group when none has space. Avoid pre-allocating groups for dormant players — a group of 30 where 25 are inactive feels dead.
 
+### 5.1 As built — three amendments to the above
+
+Recorded because the implementation diverges from the text above on purpose,
+and a silent divergence is worse than either version.
+
+**a) Promotion and relegation counts scale with the group.** The spec's flat
+"top 7 / bottom 7" is written for a full group of thirty. Groups fill lazily,
+so most real groups are partial, and 7/7 applied to a group of ten would
+promote and relegate the same people — the two sets overlap once *n* < 14. The
+implemented rule is:
+
+```
+movers = least(7, n / 4)      -- integer division
+  n=30 -> 7 up, 7 down, 16 stay   (exactly the spec)
+  n=10 -> 2 up, 2 down,  6 stay
+  n=4  -> 1 up, 1 down,  2 stay
+  n=3  -> 0 up, 0 down             nobody moves in a group of three
+```
+
+Because `2 * (n/4) <= n/2`, the two sets can never overlap at any size. Ties
+break by `user_id`, so running a rollover twice produces the same result rather
+than shuffling players who finished level. Tier 1 cannot relegate and tier 5
+cannot promote; those players are counted as unchanged, not moved to nowhere.
+
+The rule is duplicated in the client (`moversFor` in `src/backend/league.ts`)
+because the UI has to draw the cut lines *during* the season, and a line in the
+wrong place is worse than no line. `tests/league.test.ts` asserts the same
+sizes the SQL suite does — if one side changes, both must.
+
+**b) Assignment fills the fullest non-full group, not the newest.** The spec
+says newest; its own next sentence gives the reason to say fullest — spreading
+players thinly across fresh groups is precisely what makes a group feel dead.
+Packing the fullest group that still has room gives every player the busiest
+race available.
+
+**c) Tier names.** Bronze → Silver → Gold → Neon → Overdrive was placeholder
+naming in a neon-arcade game. Shipped as **SPARK → PULSE → SURGE → NOVA →
+SINGULARITY**. Five tiers either way; only the labels changed.
+
+**Verification.** `supabase/tests/league_rollover.sql` builds a season with
+four groups at one tier (30, 10, 4 and 3 players), a tier-5 ceiling group and a
+tier-1 floor group, runs `close_season()`, and asserts 12 promotions and 12
+relegations, that nobody escaped tiers 1–5, and that the season was closed. It
+cleans up after itself and passes. That is Phase 2 exit criterion 5, including
+the partially-full group it names.
+
+This suite also caught a real design bug in migration 0004: a UNIQUE index on
+`league_groups (season_id, tier)` permitted exactly one group per tier per
+season, so no tier could ever hold a 31st player — lazy assignment would have
+failed at submission time. Fixed in 0012.
+
 ---
 
 ## 6. Daily Challenge, Streaks and Quests
@@ -335,6 +386,61 @@ Every player is always in a race of 30 people they can plausibly win. This is th
 - Result is shareable as a spoiler-free text/emoji card (see §7)
 
 This is the highest-leverage single feature in Phase 2. It creates a fair global comparison, a daily conversation, and a concrete reason to open the app *today*.
+
+#### 6.1a The 14-challenge rotation
+
+A daily that is the same game every day is just a shared seed. The rotation
+gives each day an identity: `challenge_date` picks one of fourteen configs, so
+a fortnight passes before a twist repeats.
+
+**Hard constraint on every entry:** a modifier must be a value `replay()`
+honours, or the anti-cheat breaks. Nothing cosmetic, nothing client-side.
+Thirteen of the fourteen need no new engine code — the config is already rich
+enough.
+
+| # | Name | Twist | Config |
+|---|------|-------|--------|
+| 1 | **Bare Hands** | No power-ups. Just you and the chain. | `POWERUPS_ENABLED: false` |
+| 2 | **Diagonal Day** | Chains spread 8 directions. Enormous blobs. | `NEIGHBOUR_MODE: 'diagonal'` |
+| 3 | **Wall Rush** | A grey cube every 500 points. The board closes fast. | `OBSTACLE_EVERY_POINTS: 500` |
+| 4 | **Three Colours** | Palette cut to 3. Dense clusters, huge chains. | `PALETTE_SIZE: 3` |
+| 5 | **Two Colours** | Palette cut to 2. Almost everything connects. | `PALETTE_SIZE: 2` |
+| 6 | **Overcharged** | Power-ups charge in 15 clears, not 40. | `POWERUP_CHARGE_COST: 15` |
+| 7 | **Cold Tools** | 90 clears per charge. One tool, maybe. | `POWERUP_CHARGE_COST: 90` |
+| 8 | **Two In Hand** | Tray of 2. Far less room to plan. | `TRAY_SIZE: 2` |
+| 9 | **Four In Hand** | Tray of 4. A planner's day. | `TRAY_SIZE: 4` |
+| 10 | **No Rescue** | No milestone top-ups. What you earn is all you get. | `POWERUP_SCORE_MILESTONE: 0` |
+| 11 | **Lime Fever** | Lime pays ×4 and spawns heavily. Greed day. | `COLOUR_SCORE_MULTIPLIER: [1,1,4,1,1]`, weights `[80,80,160,80,80]` |
+| 12 | **Clean Room** | No obstacles at all. Pure endurance. | `OBSTACLES_ENABLED: false` |
+| 13 | **Sudden Wall** | Filler shapes withdrawn after 1 obstacle, not 5. | `SHAPE_LIMIT_AFTER_OBSTACLES: 1` |
+| 14 | **Shallow** — *HELD, see below* | Chains truncate at depth 3. | `MAX_CASCADE_DEPTH: 3` |
+
+**#14 is held pending an explicit decision.** Capping cascade depth directly
+contradicts a locked product decision — uncapped chains are core, and the depth
+cap was deleted for that reason. One day in fourteen is arguably a fair place
+to invert a rule, but inverting *the* rule the game is built on is not a call to
+make quietly. If it is rejected, the substitute is **Slow Burn**
+(`OBSTACLE_EVERY_POINTS: 4000`) — a long, open board that rewards patience,
+using a knob already in the config.
+
+**Deliberately excluded:** board-size variants (6×6, 10×10) would be the most
+visually striking of all, but `SIZE` and `BOARD_PX` are module-level constants
+in `GameScene`, so the renderer cannot vary board size per run. That is a
+refactor, not a config value.
+
+**The pipeline this needs, which does not exist yet.** `daily_challenges.config`
+is stored and `start-run` returns it, but *neither end consumes it*: the client
+never reads it, and `submit-run` replays with the default config. Wiring only
+one end would reject every daily run as `replay_mismatch`, because the server
+would replay a different game than the one played. The two must land together:
+
+1. Plumb `config` from `start-run` into the client's `GameState`
+2. Plumb the same config into `submit-run`'s `validateSubmission`
+3. Store the 14 configs and select by `challenge_date`
+4. Show the day's name and twist on the play screen
+
+Until step 3 lands, every daily is "same seed, standard rules" — which is
+correct and shippable, just not yet distinctive.
 
 ### 6.2 Streaks
 ```
@@ -411,6 +517,10 @@ Zero backend cost. No image generation. It is simultaneously a retention hook, a
 **Step 6 — Daily Challenge.** Seeded board, one attempt per day, daily board, share card.
 
 **Step 7 — Leagues.** Group assignment, points accrual, weekly promotion/relegation job (Supabase scheduled function / pg_cron).
+
+**Step 7b — Daily challenge rotation.** The 14 configs of §6.1a, plus the
+config pipeline both ends need. Not optional polish: without it `config` is
+dead weight in the schema.
 
 **Step 8 — Streaks, quests, cosmetic unlocks.**
 

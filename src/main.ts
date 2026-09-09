@@ -4,6 +4,7 @@ import { BootScene } from './scenes/BootScene';
 import { GameScene } from './scenes/GameScene';
 import { GameOverScene } from './scenes/GameOverScene';
 import { DashboardScene } from './scenes/DashboardScene';
+import { LeagueScene } from './scenes/LeagueScene';
 import { HelpScene } from './scenes/HelpScene';
 import { ensureSession, isBackendConfigured } from './backend/supabase';
 import { flushPendingRuns } from './backend/runSession';
@@ -23,7 +24,7 @@ const game = new Phaser.Game({
   // Needed for the leaderboard name field — a real input gives phones a keyboard.
   dom: { createContainer: true },
   input: { activePointers: 2 },
-  scene: [BootScene, GameScene, GameOverScene, HelpScene, DashboardScene],
+  scene: [BootScene, GameScene, GameOverScene, HelpScene, DashboardScene, LeagueScene],
 });
 
 // Handy for poking at the running game from devtools / automated smoke tests.

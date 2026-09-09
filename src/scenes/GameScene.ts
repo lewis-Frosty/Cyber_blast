@@ -193,6 +193,7 @@ export class GameScene extends Phaser.Scene {
     label: string,
     colour: string,
     onTap: () => void,
+    originX = 1,
   ): Phaser.GameObjects.Text {
     const t = this.add
       .text(x, y, label, {
@@ -203,7 +204,7 @@ export class GameScene extends Phaser.Scene {
         backgroundColor: colour,
         padding: { x: 10, y: 5 },
       })
-      .setOrigin(1, 0.5)
+      .setOrigin(originX, 0.5)
       .setDepth(30)
       .setInteractive({ useHandCursor: true });
     t.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => {
@@ -256,9 +257,9 @@ export class GameScene extends Phaser.Scene {
       .setAlpha(0.9);
 
     this.scoreText = this.add
-      .text(L.canvasWidth / 2, 80, '0', {
+      .text(L.canvasWidth / 2, 72, '0', {
         fontFamily: THEME.fonts.display,
-        fontSize: '36px',
+        fontSize: '34px',
         fontStyle: '700',
         color: THEME.colours.textPrimaryCss,
       })
@@ -275,9 +276,9 @@ export class GameScene extends Phaser.Scene {
       .setDepth(31);
 
     this.bestText = this.add
-      .text(BOARD_LEFT, 66, `BEST ${sessionBest}`, {
+      .text(BOARD_LEFT, 40, `BEST ${sessionBest}`, {
         fontFamily: THEME.fonts.body,
-        fontSize: '16px',
+        fontSize: '15px',
         fontStyle: '600',
         color: '#9D4EDD',
       })
@@ -287,18 +288,26 @@ export class GameScene extends Phaser.Scene {
     // where the player asked for them — the play screen should be the game.
     // What earns a place here is what a player wants BEFORE a run, which they
     // could previously only reach by losing one first.
-    this.dailyButton = this.addHeaderButton(L.canvasWidth - BOARD_LEFT, 58, 'DAILY', '#FFB627', () => this.startDaily());
-    this.addHeaderButton(L.canvasWidth - BOARD_LEFT, 86, 'PROFILE', '#00F0FF', () => this.scene.launch('Dashboard'));
-    this.addToggleButton(L.canvasWidth - BOARD_LEFT, 110, () => 'DBG', () => this.debug.toggle());
-    // How-to-play: a big, obvious target, not a tiny toggle.
+    // The three destinations get one row of equal weight rather than a stack
+    // squeezed into a corner. A third button would not fit the old right-hand
+    // column without landing on the board's top edge.
+    this.dailyButton = this.addHeaderButton(BOARD_LEFT, 104, 'DAILY', '#FFB627', () => this.startDaily(), 0);
+    this.addHeaderButton(L.canvasWidth / 2, 104, 'PROFILE', '#00F0FF', () => this.scene.launch('Dashboard'), 0.5);
+    this.addHeaderButton(L.canvasWidth - BOARD_LEFT, 104, 'LEAGUE', '#A8FF3E', () => this.scene.launch('League'));
+
+    // A developer toggle, parked in the one corner nothing else wants.
+    this.addToggleButton(BOARD_LEFT + 26, 22, () => 'DBG', () => this.debug.toggle());
+
+    // How-to-play: a big, obvious target, not a tiny toggle. Sits opposite
+    // BEST so the button row below it stays clear.
     const help = this.add
-      .text(BOARD_LEFT, 100, '?  HOW TO PLAY', {
+      .text(L.canvasWidth - BOARD_LEFT, 40, '?  HOW TO PLAY', {
         fontFamily: THEME.fonts.body,
-        fontSize: '14px',
+        fontSize: '13px',
         fontStyle: '700',
         color: '#00F0FF',
       })
-      .setOrigin(0, 0.5)
+      .setOrigin(1, 0.5)
       .setPadding(10, 10)
       .setInteractive({ useHandCursor: true });
     help.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, event: Phaser.Types.Input.EventData) => {

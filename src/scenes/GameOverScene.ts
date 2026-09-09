@@ -194,7 +194,7 @@ export class GameOverScene extends Phaser.Scene {
     const y = this.boardTop + 320;
 
     this.shareButton = this.add
-      .text(w / 2 - 88, y, 'SHARE', {
+      .text(w / 2 - 76, y, 'SHARE', {
         fontFamily: THEME.fonts.body,
         fontSize: '14px',
         fontStyle: '700',
@@ -209,8 +209,26 @@ export class GameOverScene extends Phaser.Scene {
       void this.share();
     });
 
+    // The league is where this run's points actually landed, so it belongs
+    // next to the score rather than only on the play screen.
+    const league = this.add
+      .text(w / 2 + 40, y, 'LEAGUE', {
+        fontFamily: THEME.fonts.body,
+        fontSize: '14px',
+        fontStyle: '700',
+        color: '#07070F',
+        backgroundColor: '#9D4EDD',
+        padding: { x: 12, y: 8 },
+      })
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true });
+    league.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => {
+      ev.stopPropagation();
+      this.scene.launch('League');
+    });
+
     this.dailyButton = this.add
-      .text(w / 2 + 60, y, 'DAILY', {
+      .text(w / 2 + 140, y, 'DAILY', {
         fontFamily: THEME.fonts.body,
         fontSize: '14px',
         fontStyle: '700',
