@@ -1,0 +1,89 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace = "com.frosty.cyberblast"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "com.frosty.cyberblast"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        // versionCode MUST increment on every upload to Play; a bundle whose
+        // code is <= one already uploaded is rejected outright. versionName is
+        // the human string shown in the store.
+        versionCode 1
+        versionName "0.9.0"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    /**
+     * Release signing, read from android/keystore.properties.
+     *
+     * That file and the .jks it points at are gitignored and must NEVER be
+     * committed: anyone holding them can publish an update to this app.
+     *
+     * If the file is absent the release signingConfig is simply not created,
+     * so `bundleRelease` fails with "signingConfig not found" rather than
+     * quietly emitting a debug-signed bundle that Play would reject on upload
+     * — a failure that is much cheaper to understand at build time.
+     */
+    signingConfigs {
+        if (project.file('../keystore.properties').exists()) {
+            release {
+                def props = new Properties()
+                props.load(new FileInputStream(project.file('../keystore.properties')))
+                storeFile file(props['storeFile'])
+                storePassword props['storePassword']
+                keyAlias props['keyAlias']
+                keyPassword props['keyPassword']
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            if (project.file('../keystore.properties').exists()) {
+                signingConfig signingConfigs.release
+            }
+            // Kept off deliberately. The whole app is one bundled JS file the
+            // WebView loads; R8 shrinks only the thin Java wrapper, saving
+            // almost nothing, while turning any crash in that wrapper into an
+            // unreadable stack trace unless the ReTrace mapping is uploaded
+            // with every build. Turn it on only with a reason.
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}

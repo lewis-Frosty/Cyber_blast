@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Cyber Blast</string>
+    <string name="title_activity_main">Cyber Blast</string>
+    <string name="package_name">com.frosty.cyberblast</string>
+    <string name="custom_url_scheme">com.frosty.cyberblast</string>
+</resources>

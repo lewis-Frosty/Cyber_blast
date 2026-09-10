@@ -10,6 +10,7 @@ import { HelpScene } from './scenes/HelpScene';
 import { ensureSession, isBackendConfigured } from './backend/supabase';
 import { flushPendingRuns } from './backend/runSession';
 import { smokeTest } from './debug/smokeTest';
+import { installAndroidBackButton } from './platform/androidBackButton';
 
 const game = new Phaser.Game({
   type: Phaser.AUTO,
@@ -39,6 +40,9 @@ declare global {
 // actually be exercised, and this grants no access the bundle does not already
 // carry — the publishable key is inlined either way and RLS governs everything.
 window.__cyberBlast = Object.assign(game, { smokeTest });
+
+// Android hardware back. No-ops on the web.
+void installAndroidBackButton(game);
 
 // Sign in silently on first launch (backend spec §1). Fired and forgotten: the
 // game must start and stay playable whether or not this ever resolves.
