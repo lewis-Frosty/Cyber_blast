@@ -2,6 +2,7 @@ import type { GameAction } from '../core/replay';
 import { RunSession, type RunMode } from './moveLog';
 import { ensureSession, getSupabase, isBackendConfigured } from './supabase';
 import { invokeFunction, refusal } from './invoke';
+import { MAX_KEEP_RUN_IDS, sanitiseKeepRunIds } from './keepRunIds';
 
 /**
  * The run lifecycle as the client sees it — backend spec §4.1/§4.2.
@@ -48,7 +49,16 @@ export async function startRun(mode: RunMode = 'endless'): Promise<RunSession> {
     const session = await ensureSession();
     if (!supabase || !session) return offlineRun();
 
-    const res = await invokeFunction(supabase, 'start-run', { mode });
+    // Tell the server which runs this client still intends to submit. Every
+    // other active run of ours is abandoned — a reload, a closed tab, a
+    // crash — and the server expires them instead of counting them against
+    // the concurrent-run cap.
+    //
+    // Without this, three reloads inside the two-hour TTL exhausted the cap
+    // and every subsequent run came back 429, so the game silently played
+    // OFFLINE and nothing could be ranked. The list is what protects the
+    // offline queue: those runs must stay active until they are submitted.
+    const res = await invokeFunction(supabase, 'start-run', { mode, keepRunIds: pendingRunIds() });
     const data = res.body as {
       runId?: string; seed?: number; mode?: string; moveLimit?: number; challengeDate?: string;
     } | null;
@@ -107,6 +117,20 @@ function writeQueue(items: PendingSubmission[]): void {
   } catch {
     /* storage unavailable — the run just isn't retried */
   }
+}
+
+/**
+ * Run ids still waiting to be submitted. Capped: the server trusts this list
+ * only to SPARE runs from expiry, never to create them, but an unbounded list
+ * would still let a client pin arbitrarily many rows as active.
+ */
+function pendingRunIds(): string[] {
+  return sanitiseKeepRunIds(
+    readQueue()
+      .filter((p) => Date.now() - p.queuedAt < QUEUE_TTL_MS)
+      .map((p) => p.runId)
+      .slice(0, MAX_KEEP_RUN_IDS),
+  );
 }
 
 function enqueue(item: PendingSubmission): void {

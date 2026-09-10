@@ -67,7 +67,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (userErr || !userData.user) return json({ error: 'unauthenticated' }, 401);
   const userId = userData.user.id;
 
-  let body: { mode?: string } = {};
+  let body: { mode?: string; keepRunIds?: unknown } = {};
   try {
     body = await req.json();
   } catch {
@@ -75,14 +75,37 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
   const mode = body.mode === 'daily' || body.mode === 'limited' ? body.mode : 'endless';
 
+  // Runs the client says it still intends to submit (its offline queue).
+  // Everything else of theirs is abandoned. Capped and shape-checked: this
+  // list can only SPARE a run from expiry, never create or extend one, but an
+  // unbounded list would still let a client pin arbitrarily many rows active.
+  // Strictly UUIDs: these ids are interpolated into a PostgREST `in.(...)`
+  // filter, so a value carrying a quote or a bracket could break out of it.
+  // A whitelist beats escaping.
+  const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+  const keepRunIds = Array.isArray(body.keepRunIds)
+    ? body.keepRunIds.filter((v): v is string => typeof v === 'string' && UUID_RE.test(v)).slice(0, 10)
+    : [];
+
   const db = createClient(url, serviceKey);
   const nowIso = new Date().toISOString();
   const cutoff = new Date(Date.now() - RUN_TTL_MS).toISOString();
 
-  // 2. Expire stale active runs before counting them, or a player who closes
-  // the app three times is locked out for two hours.
+  // 2. Expire this player's abandoned runs before counting them.
+  //
+  // Two rules, and the second is the one that matters. Age alone was not
+  // enough: a run abandoned by a reload stays inside the two-hour TTL, so
+  // three reloads filled the cap and every later start-run answered 429 —
+  // the game then played OFFLINE and could not be ranked at all. A client
+  // only ever plays one run at a time, so anything it is not holding for
+  // submission is dead the moment it asks for a new one.
   await db.from('runs').update({ status: 'expired' })
     .eq('user_id', userId).eq('status', 'active').lt('started_at', cutoff);
+
+  const keepList = `(${keepRunIds.map((id) => `"${id}"`).join(',')})`;
+  const abandoned = db.from('runs').update({ status: 'expired' })
+    .eq('user_id', userId).eq('status', 'active');
+  await (keepRunIds.length > 0 ? abandoned.not('id', 'in', keepList) : abandoned);
 
   // 1. Cap concurrent sessions — this is what stops runId farming.
   const { count, error: countErr } = await db.from('runs')
