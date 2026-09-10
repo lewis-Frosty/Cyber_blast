@@ -3,13 +3,58 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>CYBER BLAST — prototype</title>
+    <title>Cyber Blast</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Crect width=%2716%27 height=%2716%27 rx=%273%27 fill=%27%2300F0FF%27/%3E%3C/svg%3E" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Rajdhani:wght@500;600&display=swap" rel="stylesheet" />
     <style>
-      html, body { margin: 0; padding: 0; background: #07070F; height: 100%; overflow: hidden; }
+      /* Fonts are SELF-HOSTED, not pulled from Google's CDN.
+         The whole neon look is these two faces, and in a packaged Android
+         build the WebView may have no network at all — a CDN font means the
+         game silently falls back to a system sans and stops looking like
+         itself. Play also requires the app to work offline. `font-display:
+         block` over `swap` for the same reason: a brief wait beats a frame of
+         the wrong typeface. */
+      @font-face {
+        font-family: 'Orbitron';
+        font-style: normal;
+        font-weight: 700;
+        font-display: block;
+        src: url('/fonts/orbitron-700-latin.woff2') format('woff2');
+      }
+      @font-face {
+        font-family: 'Rajdhani';
+        font-style: normal;
+        font-weight: 500;
+        font-display: block;
+        src: url('/fonts/rajdhani-500-latin.woff2') format('woff2');
+      }
+      @font-face {
+        font-family: 'Rajdhani';
+        font-style: normal;
+        font-weight: 600;
+        font-display: block;
+        src: url('/fonts/rajdhani-600-latin.woff2') format('woff2');
+      }
+      /* 700 is used for button labels; Rajdhani ships no 700 latin face in
+         this subset, so map it to 600 rather than letting the browser
+         synthesise a smeared fake bold. */
+      @font-face {
+        font-family: 'Rajdhani';
+        font-style: normal;
+        font-weight: 700;
+        font-display: block;
+        src: url('/fonts/rajdhani-600-latin.woff2') format('woff2');
+      }
+
+      html, body {
+        margin: 0; padding: 0; background: #07070F; height: 100%; overflow: hidden;
+        /* Packaged builds: kill the WebView's own gestures. Long-press
+           selection, the callout menu and pull-to-refresh all fire during
+           normal drag-a-piece play. */
+        -webkit-user-select: none; user-select: none;
+        -webkit-touch-callout: none;
+        -webkit-tap-highlight-color: transparent;
+        overscroll-behavior: none;
+      }
       /* Phaser centres the canvas itself (Scale.CENTER_BOTH) and absolutely
          positions its DOM-element container inside this div. Flex-centring here
          as well moved that container off the canvas, which is why DOM inputs
