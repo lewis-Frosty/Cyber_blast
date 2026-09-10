@@ -5,6 +5,7 @@ import { THEME } from '../config/theme';
 import { GameState, type TurnResult } from '../core/gameState';
 import { startRun, type RunSession } from '../backend/runSession';
 import { fetchDailyState, msUntilTomorrow } from '../backend/daily';
+import { loadTotals } from '../backend/profile';
 import type { Piece } from '../core/Piece';
 import type { CellIndex, ColorId } from '../core/types';
 import { blockTextureKey, createBlock, retextureBlocks, TEXTURE } from '../render/BlockRenderer';
@@ -27,7 +28,16 @@ const TRAY_CENTRE_Y = L.trayTop + 90;
 const PU_BAR_Y = BOARD_TOP + BOARD_PX + 44;
 
 /** Session best — deliberately not persisted (Phase 1 has no retention systems). */
+/**
+ * The player's best score, seeded from the server on first load.
+ *
+ * It used to start at 0 every page load, so the header read "BEST 0" for a
+ * player with 14,173 banked and the game announced "NEW BEST" on their first
+ * run of every session. The server already knows the real number.
+ */
 let sessionBest = 0;
+/** Only ask the server once per page load; it cannot change under us. */
+let bestSeeded = false;
 
 /**
  * The seed and run identity for the current game.
@@ -221,6 +231,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     void this.refreshDailyButton();
+    void this.seedBestFromServer();
 
     if (this.state.gameOver) this.endGame();
     else if (!hasSeenHelp()) this.time.delayedCall(420, () => this.openHelp());
@@ -228,6 +239,25 @@ export class GameScene extends Phaser.Scene {
 
   override update(): void {
     this.debug.update();
+  }
+
+  /**
+   * Pull the banked best in and show it. Fire-and-forget: a slow or missing
+   * backend must not delay the board, and an offline player simply keeps the
+   * session-local number.
+   */
+  private async seedBestFromServer(): Promise<void> {
+    if (bestSeeded) {
+      this.bestText.setText(`BEST ${sessionBest}`);
+      return;
+    }
+    bestSeeded = true;
+    const totals = await loadTotals();
+    if (!this.scene.isActive() || !totals) return;
+    if (totals.bestScore > sessionBest) {
+      sessionBest = totals.bestScore;
+      this.bestText.setText(`BEST ${sessionBest}`);
+    }
   }
 
   /** Dim the DAILY button once today's attempt is spent. */
